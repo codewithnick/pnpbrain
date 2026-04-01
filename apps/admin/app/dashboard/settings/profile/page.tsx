@@ -2,40 +2,126 @@
 
 /**
  * Settings → Profile
- * Business name, slug (public URL), description.
+ * Business identity, hosting visibility, and integration API credentials.
  */
 
-import { useEffect, useState } from 'react';
-import { fetchBackend } from '@/lib/supabase';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchBackend, getBackendUrl } from '@/lib/supabase';
 
 function slugify(v: string) {
   return v.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').slice(0, 40);
 }
 
-export default function ProfileSettingsPage() {
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-  const [success, setSuccess]   = useState(false);
-  const [error, setError]       = useState('');
+interface BusinessMeResponse {
+  data?: {
+    id?: string;
+    name?: string;
+    slug?: string;
+    description?: string;
+    allowedDomains?: string[];
+    agentApiKey?: string | null;
+  };
+  error?: string;
+}
 
-  const [name, setName]           = useState('');
-  const [slug, setSlug]           = useState('');
+export default function ProfileSettingsPage() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [rotatingKey, setRotatingKey] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  const [businessId, setBusinessId] = useState('');
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
   const [originalSlug, setOriginalSlug] = useState('');
   const [description, setDescription] = useState('');
+  const [allowedDomains, setAllowedDomains] = useState<string[]>([]);
+  const [agentApiKey, setAgentApiKey] = useState('');
 
   useEffect(() => {
     (async () => {
       const res = await fetchBackend('/api/business/me');
-      if (!res.ok) { setLoading(false); return; }
-      const json = (await res.json()) as { data?: Record<string, unknown> };
+      const json = (await res.json().catch(() => ({}))) as BusinessMeResponse;
       const d = json.data;
-      if (!d) { setLoading(false); return; }
-      if (typeof d.name === 'string')        setName(d.name);
-      if (typeof d.slug === 'string')        { setSlug(d.slug); setOriginalSlug(d.slug); }
-      if (typeof d.description === 'string') setDescription(d.description);
+
+      if (res.ok && d) {
+        if (typeof d.id === 'string') setBusinessId(d.id);
+        if (typeof d.name === 'string') setName(d.name);
+        if (typeof d.slug === 'string') {
+          setSlug(d.slug);
+          setOriginalSlug(d.slug);
+        }
+        if (typeof d.description === 'string') setDescription(d.description);
+        if (Array.isArray(d.allowedDomains)) setAllowedDomains(d.allowedDomains);
+        if (typeof d.agentApiKey === 'string') setAgentApiKey(d.agentApiKey);
+      }
+
       setLoading(false);
     })();
   }, []);
+
+  const integrationCurl = useMemo(() => {
+    if (!agentApiKey) return '';
+    return `curl -X POST "${getBackendUrl()}/api/agent/chat" \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: ${agentApiKey}" \\
+  -d '{"message":"Hello from our app"}'`;
+  }, [agentApiKey]);
+
+  const mcpEndpoint = useMemo(() => `${getBackendUrl()}/mcp`, []);
+
+  const claudeDesktopConfig = useMemo(() => {
+    if (!agentApiKey) return '';
+    return JSON.stringify(
+      {
+        mcpServers: {
+          'gcfis-agent': {
+            command: 'npx',
+            args: ['mcp-remote', mcpEndpoint],
+            env: { MCP_API_KEY: agentApiKey },
+          },
+        },
+      },
+      null,
+      2
+    );
+  }, [agentApiKey, mcpEndpoint]);
+
+  const mcpCurl = useMemo(() => {
+    if (!agentApiKey) return '';
+    return `curl -X POST "${mcpEndpoint}" \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: ${agentApiKey}" \\
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'`;
+  }, [agentApiKey, mcpEndpoint]);
+
+  async function copyApiKey() {
+    if (!agentApiKey) return;
+    await navigator.clipboard.writeText(agentApiKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function rotateApiKey() {
+    setError('');
+    setRotatingKey(true);
+
+    const res = await fetchBackend('/api/business/me/api-key/rotate', { method: 'POST' });
+    const json = (await res.json().catch(() => ({}))) as { data?: { agentApiKey?: string }; error?: string };
+
+    setRotatingKey(false);
+
+    if (!res.ok || !json.data?.agentApiKey) {
+      setError(json.error ?? 'Failed to rotate API key');
+      return;
+    }
+
+    setAgentApiKey(json.data.agentApiKey);
+    setShowApiKey(true);
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -48,24 +134,30 @@ export default function ProfileSettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, slug, description }),
     });
+
     setSaving(false);
 
-    if (res.status === 409) { setError('That slug is already taken.'); return; }
+    if (res.status === 409) {
+      setError('That slug is already taken.');
+      return;
+    }
+
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       setError(j.error ?? 'Save failed');
       return;
     }
+
     setOriginalSlug(slug);
     setSuccess(true);
     setTimeout(() => setSuccess(false), 3000);
   }
 
-  if (loading) return <div className="text-sm text-gray-400 py-8">Loading…</div>;
+  if (loading) return <div className="text-sm text-gray-400 dark:text-slate-500 py-8">Loading…</div>;
 
   return (
-    <form onSubmit={handleSave} className="space-y-6 max-w-xl">
-      {error   && <Alert type="error"   message={error} />}
+    <form onSubmit={handleSave} className="space-y-6 max-w-3xl">
+      {error && <Alert type="error" message={error} />}
       {success && <Alert type="success" message="Saved successfully." />}
 
       <Card title="Business name" description="Shown in the chat header and on your public page.">
@@ -79,9 +171,9 @@ export default function ProfileSettingsPage() {
         />
       </Card>
 
-      <Card title="Public chat URL" description={`Your customers will visit this URL to chat with your assistant.`}>
-        <div className="flex items-center gap-0 rounded-lg border border-gray-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-100 transition overflow-hidden">
-          <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-300 shrink-0 select-none">
+      <Card title="Public chat URL" description="Your customers will visit this URL to chat with your assistant.">
+        <div className="flex items-center gap-0 rounded-lg border border-gray-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-100 transition overflow-hidden dark:border-slate-700">
+          <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-300 shrink-0 select-none dark:bg-slate-900 dark:border-slate-700 dark:text-slate-500">
             gcfis.app/
           </span>
           <input
@@ -90,12 +182,12 @@ export default function ProfileSettingsPage() {
             onChange={(e) => setSlug(slugify(e.target.value))}
             required
             pattern="[a-z0-9-]+"
-            className="flex-1 px-3 py-2.5 text-sm bg-white focus:outline-none font-mono"
+            className="flex-1 px-3 py-2.5 text-sm bg-white focus:outline-none font-mono dark:bg-slate-950 dark:text-slate-100"
             placeholder="acme-corp"
           />
         </div>
         {slug && slug !== originalSlug && (
-          <p className="mt-1.5 text-xs text-amber-600">
+          <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-300">
             ⚠ Changing your slug will break any shared links using the old URL.
           </p>
         )}
@@ -110,7 +202,138 @@ export default function ProfileSettingsPage() {
           placeholder="We are an e-commerce platform specialising in eco-friendly home goods…"
           maxLength={500}
         />
-        <p className="mt-1 text-xs text-right text-gray-400">{description.length}/500</p>
+        <p className="mt-1 text-xs text-right text-gray-400 dark:text-slate-500">{description.length}/500</p>
+      </Card>
+
+      <Card title="Hosted on" description="Where your agent is currently allowed to run.">
+        {allowedDomains.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {allowedDomains.map((domain) => (
+              <span
+                key={domain}
+                className="inline-flex items-center rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-200"
+              >
+                {domain}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400">
+            No domains configured yet. Add allowed domains in Skills to define where your agent is hosted.
+          </p>
+        )}
+      </Card>
+
+      <Card title="Integration API key" description="Use this key to integrate your agent into external systems.">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <input
+              type={showApiKey ? 'text' : 'password'}
+              readOnly
+              value={agentApiKey}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm font-mono text-slate-100"
+            />
+            <button
+              type="button"
+              onClick={() => setShowApiKey((v) => !v)}
+              className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
+            >
+              {showApiKey ? 'Hide' : 'Show'}
+            </button>
+            <button
+              type="button"
+              onClick={copyApiKey}
+              className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            <button
+              type="button"
+              disabled={rotatingKey}
+              onClick={rotateApiKey}
+              className="rounded-lg bg-brand-500 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+            >
+              {rotatingKey ? 'Rotating...' : 'Rotate'}
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-400">Rotating revokes the previous key immediately.</p>
+
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+            <p className="mb-2 text-xs font-medium text-slate-300">Use with REST</p>
+            <pre className="overflow-x-auto text-xs text-slate-200">
+              <code>{integrationCurl}</code>
+            </pre>
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        title="MCP Server"
+        description="Connect any MCP-compatible AI client (Claude Desktop, Cursor, GitHub Copilot, Windsurf, etc.) directly to your agent."
+      >
+        <div className="space-y-4">
+          {/* Endpoint */}
+          <div>
+            <p className="mb-1 text-xs font-medium text-slate-300">Endpoint</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                readOnly
+                value={mcpEndpoint}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm font-mono text-slate-100"
+              />
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(mcpEndpoint)}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 shrink-0"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+
+          {/* Auth */}
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
+            <span className="font-medium text-slate-200">Authentication: </span>
+            add an <code className="text-indigo-400">x-api-key: &lt;your-api-key&gt;</code> header to every request.
+          </div>
+
+          {/* Claude Desktop */}
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+            <p className="mb-2 text-xs font-medium text-slate-300">Claude Desktop — <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></p>
+            <pre className="overflow-x-auto text-xs text-slate-200 whitespace-pre-wrap">
+              <code>{claudeDesktopConfig}</code>
+            </pre>
+          </div>
+
+          {/* Test with cURL */}
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+            <p className="mb-2 text-xs font-medium text-slate-300">Test with cURL — list available tools</p>
+            <pre className="overflow-x-auto text-xs text-slate-200">
+              <code>{mcpCurl}</code>
+            </pre>
+          </div>
+
+          {/* Available tools */}
+          <div>
+            <p className="mb-2 text-xs font-medium text-slate-300">Available tools</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {[
+                { name: 'chat', desc: 'Send a message to the agent and get a full reply' },
+                { name: 'list_conversations', desc: 'List recent conversation threads' },
+                { name: 'get_conversation', desc: 'Fetch all messages in a thread' },
+                { name: 'list_knowledge', desc: 'List indexed knowledge documents' },
+                { name: 'add_knowledge_url', desc: 'Crawl a URL and add it to the knowledge base' },
+              ].map((t) => (
+                <div key={t.name} className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">
+                  <code className="text-xs font-semibold text-indigo-400">{t.name}</code>
+                  <p className="mt-0.5 text-xs text-slate-400">{t.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </Card>
 
       <div className="flex justify-end pt-2">
@@ -127,13 +350,13 @@ export default function ProfileSettingsPage() {
 }
 
 const fieldCls =
-  'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition';
+  'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
 function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h3 className="text-sm font-semibold text-gray-900 mb-0.5">{title}</h3>
-      {description && <p className="text-xs text-gray-500 mb-3">{description}</p>}
+    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">{title}</h3>
+      {description && <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">{description}</p>}
       {children}
     </div>
   );
@@ -144,8 +367,8 @@ function Alert({ type, message }: { type: 'error' | 'success'; message: string }
     <div
       className={`rounded-lg border px-4 py-3 text-sm ${
         type === 'error'
-          ? 'bg-red-50 border-red-200 text-red-600'
-          : 'bg-green-50 border-green-200 text-green-700'
+          ? 'bg-red-50 border-red-200 text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
+          : 'bg-green-50 border-green-200 text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300'
       }`}
     >
       {message}

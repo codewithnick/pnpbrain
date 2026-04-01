@@ -1,32 +1,25 @@
+import { Box, Container, Stack, Typography } from '@mui/material';
+
 export default function Footer() {
   return (
-    <footer className="border-t border-gray-100 bg-white px-6 py-12">
-      <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-6 text-sm text-gray-500">
-        <p className="font-semibold text-gray-700">
-          GCFIS{' '}
-          <span className="font-normal text-gray-400">
-            — General Customer Facing Intelligent System
-          </span>
-        </p>
-        <ul className="flex gap-6">
-          <li>
-            <a href="#features" className="hover:text-gray-700 transition-colors">
-              Features
-            </a>
-          </li>
-          <li>
-            <a href="#pricing" className="hover:text-gray-700 transition-colors">
-              Pricing
-            </a>
-          </li>
-          <li>
-            <a href="mailto:hello@gcfis.com" className="hover:text-gray-700 transition-colors">
-              Contact
-            </a>
-          </li>
-        </ul>
-        <p>© {new Date().getFullYear()} GCFIS. All rights reserved.</p>
-      </div>
-    </footer>
+    <Box component="footer" sx={{ borderTop: '1px solid rgba(148, 163, 184, 0.22)', py: 6, px: 2 }}>
+      <Container maxWidth="lg">
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
+          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+            GCFIS <span style={{ fontWeight: 400, color: '#64748b' }}>General Customer Facing Intelligent System</span>
+          </Typography>
+
+          <Stack direction="row" spacing={3} sx={{ fontSize: 14 }}>
+            <a href="#features" style={{ color: '#334155', textDecoration: 'none' }}>Features</a>
+            <a href="#pricing" style={{ color: '#334155', textDecoration: 'none' }}>Pricing</a>
+            <a href="mailto:hello@gcfis.com" style={{ color: '#334155', textDecoration: 'none' }}>Contact</a>
+          </Stack>
+
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            © {new Date().getFullYear()} GCFIS. All rights reserved.
+          </Typography>
+        </Stack>
+      </Container>
+    </Box>
   );
 }

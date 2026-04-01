@@ -66,17 +66,17 @@ function gcfis_sanitize_settings( mixed $raw ): array {
     }
     $clean['backend_url'] = esc_url_raw( $backend_url );
 
-    // Business ID — alphanumeric + hyphens/underscores only.
-    $business_id = isset( $raw['business_id'] ) ? trim( sanitize_text_field( $raw['business_id'] ) ) : '';
-    if ( $business_id !== '' && ! preg_match( '/^[a-zA-Z0-9_\-]+$/', $business_id ) ) {
+    // Public token — opaque token returned by backend.
+    $public_token = isset( $raw['public_token'] ) ? trim( sanitize_text_field( $raw['public_token'] ) ) : '';
+    if ( $public_token !== '' && ! preg_match( '/^[a-zA-Z0-9_\-.]+$/', $public_token ) ) {
         add_settings_error(
             GCFIS_WIDGET_OPTION,
-            'invalid_business_id',
-            __( 'Business ID may only contain letters, numbers, hyphens and underscores.', 'gcfis-widget' )
+            'invalid_public_token',
+            __( 'Public token may only contain letters, numbers, hyphens, underscores, and dots.', 'gcfis-widget' )
         );
-        $business_id = '';
+        $public_token = '';
     }
-    $clean['business_id'] = $business_id;
+    $clean['public_token'] = $public_token;
 
     // Primary colour — must be a valid CSS hex colour or empty.
     $primary_color = isset( $raw['primary_color'] ) ? trim( sanitize_text_field( $raw['primary_color'] ) ) : '#6366f1';
@@ -123,7 +123,7 @@ function gcfis_render_settings_page(): void {
 
     $opts          = (array) get_option( GCFIS_WIDGET_OPTION, [] );
     $backend_url   = $opts['backend_url']     ?? '';
-    $business_id   = $opts['business_id']     ?? '';
+    $public_token  = $opts['public_token']    ?? '';
     $primary_color = $opts['primary_color']   ?? '#6366f1';
     $bot_name      = $opts['bot_name']        ?? 'Assistant';
     $welcome_msg   = $opts['welcome_message'] ?? 'Hi! How can I help you today?';
@@ -160,7 +160,7 @@ function gcfis_enqueue_widget_script(): void {
     $opts = (array) get_option( GCFIS_WIDGET_OPTION, [] );
 
     // Don't output anything if the plugin isn't configured.
-    if ( empty( $opts['backend_url'] ) || empty( $opts['business_id'] ) ) {
+    if ( empty( $opts['backend_url'] ) || empty( $opts['public_token'] ) ) {
         return;
     }
 
@@ -182,7 +182,7 @@ function gcfis_enqueue_widget_script(): void {
      */
     $config = apply_filters( 'gcfis_widget_config', [
         'backendUrl'     => esc_url_raw( $opts['backend_url'] ),
-        'businessId'     => sanitize_key( $opts['business_id'] ),
+        'publicToken'    => sanitize_text_field( $opts['public_token'] ),
         'primaryColor'   => $opts['primary_color']   ?? '#6366f1',
         'botName'        => $opts['bot_name']         ?? 'Assistant',
         'welcomeMessage' => $opts['welcome_message']  ?? 'Hi! How can I help you today?',
@@ -209,7 +209,7 @@ function gcfis_filter_script_tag( string $tag, string $handle, string $src ): st
 
     $opts = (array) get_option( GCFIS_WIDGET_OPTION, [] );
     $attrs = [
-        'data-business-id'     => esc_attr( $opts['business_id'] ?? '' ),
+        'data-public-token'    => esc_attr( $opts['public_token'] ?? '' ),
         'data-backend-url'     => esc_url( $opts['backend_url'] ?? '' ),
         'data-primary-color'   => esc_attr( $opts['primary_color'] ?? '#6366f1' ),
         'data-bot-name'        => esc_attr( $opts['bot_name'] ?? 'Assistant' ),
@@ -262,7 +262,7 @@ add_action( 'wp_enqueue_scripts', 'gcfis_maybe_auto_inject' );
  * a plain mount-point div. The JS bundle handles rendering into it.
  *
  * Accepted attributes mirror the JS WidgetConfig interface:
- *   business_id, backend_url, primary_color, bot_name, welcome_message
+ *   public_token, backend_url, primary_color, bot_name, welcome_message
  *
  * Shortcode-level attributes override Settings values.
  *
@@ -274,7 +274,7 @@ function gcfis_widget_shortcode( array|string $atts ): string {
 
     $atts = shortcode_atts(
         [
-            'business_id'     => $opts['business_id']     ?? '',
+            'public_token'    => $opts['public_token']    ?? '',
             'backend_url'     => $opts['backend_url']     ?? '',
             'primary_color'   => $opts['primary_color']   ?? '#6366f1',
             'bot_name'        => $opts['bot_name']         ?? 'Assistant',
@@ -284,10 +284,10 @@ function gcfis_widget_shortcode( array|string $atts ): string {
         'gcfis_widget'
     );
 
-    if ( empty( $atts['business_id'] ) || empty( $atts['backend_url'] ) ) {
+    if ( empty( $atts['public_token'] ) || empty( $atts['backend_url'] ) ) {
         if ( current_user_can( 'manage_options' ) ) {
             return '<p style="color:red;">'
-                . esc_html__( 'GCFIS Widget: Please configure Backend URL and Business ID in Settings → GCFIS Widget.', 'gcfis-widget' )
+                . esc_html__( 'GCFIS Widget: Please configure Backend URL and Public Token in Settings → GCFIS Widget.', 'gcfis-widget' )
                 . '</p>';
         }
         return '';
@@ -298,19 +298,19 @@ function gcfis_widget_shortcode( array|string $atts ): string {
 
     // The div carries the config so the IIFE can read it, since wp_localize_script
     // may have already printed the global with different values.
-    $mount_id = 'gcfis-' . esc_attr( sanitize_key( $atts['business_id'] ) );
+    $mount_id = 'gcfis-widget-' . esc_attr( substr( md5( $atts['public_token'] ), 0, 10 ) );
 
     return sprintf(
         '<div id="%s" '
         . 'data-gcfis-mount="1" '
-        . 'data-business-id="%s" '
+        . 'data-public-token="%s" '
         . 'data-backend-url="%s" '
         . 'data-primary-color="%s" '
         . 'data-bot-name="%s" '
         . 'data-welcome-message="%s">'
         . '</div>',
         esc_attr( $mount_id ),
-        esc_attr( $atts['business_id'] ),
+        esc_attr( $atts['public_token'] ),
         esc_url( $atts['backend_url'] ),
         esc_attr( $atts['primary_color'] ),
         esc_attr( $atts['bot_name'] ),
@@ -329,7 +329,7 @@ function gcfis_on_activate(): void {
     if ( get_option( GCFIS_WIDGET_OPTION ) === false ) {
         update_option( GCFIS_WIDGET_OPTION, [
             'backend_url'     => '',
-            'business_id'     => '',
+            'public_token'    => '',
             'primary_color'   => '#6366f1',
             'bot_name'        => 'Assistant',
             'welcome_message' => 'Hi! How can I help you today?',

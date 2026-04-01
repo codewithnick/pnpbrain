@@ -7,12 +7,15 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
+import { AppBar, Box, Button, Chip, Stack, Toolbar, Typography } from '@mui/material';
 import Sidebar from '@/components/Sidebar';
 
 function getSupabase() {
   return createClient(
     process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '',
-    process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? ''
+    process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY'] ?? ''
   );
 }
 
@@ -47,36 +50,81 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
       <Sidebar />
 
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        {/* Top banner — public chat URL */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        <AppBar
+          position="static"
+          color="transparent"
+          elevation={0}
+          sx={{
+            borderBottom: '1px solid rgba(148, 163, 184, 0.14)',
+            bgcolor: 'rgba(2, 6, 23, 0.65)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <Toolbar sx={{ minHeight: 70, justifyContent: 'space-between', px: { xs: 2, md: 3 } }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', md: '1.15rem' } }}>
+                Business Control Center
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Monitor conversations, train knowledge, and keep your assistant production-ready.
+              </Typography>
+            </Box>
+            <Chip label="Live" color="secondary" size="small" />
+          </Toolbar>
+        </AppBar>
+
         {publicUrl && (
-          <div className="shrink-0 flex items-center justify-between gap-4 bg-brand-50 border-b border-brand-100 px-5 py-2">
-            <p className="text-xs text-gray-600">
-              Your public chat page:{' '}
-              <a
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.5}
+            alignItems={{ xs: 'flex-start', md: 'center' }}
+            justifyContent="space-between"
+            sx={{
+              px: { xs: 2, md: 3 },
+              py: 1.5,
+              borderBottom: '1px solid rgba(14, 165, 233, 0.25)',
+              bgcolor: 'rgba(14, 165, 233, 0.08)',
+            }}
+          >
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Public chat page:{' '}
+              <a href={publicUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#7dd3fc' }}>
+                {publicUrl}
+              </a>
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                color="primary"
+                variant="contained"
+                startIcon={<ContentCopyRoundedIcon fontSize="small" />}
+                onClick={copyUrl}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+              <Button
+                size="small"
+                color="primary"
+                variant="outlined"
+                startIcon={<OpenInNewRoundedIcon fontSize="small" />}
                 href={publicUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-mono font-semibold text-brand-600 hover:underline"
               >
-                {publicUrl}
-              </a>
-            </p>
-            <button
-              type="button"
-              onClick={copyUrl}
-              className="shrink-0 rounded-md border border-brand-200 bg-white px-3 py-1 text-xs font-medium text-brand-600 hover:bg-brand-100 transition"
-            >
-              {copied ? '✓ Copied' : 'Copy link'}
-            </button>
-          </div>
+                Open
+              </Button>
+            </Stack>
+          </Stack>
         )}
 
-        <main className="flex-1 overflow-y-auto">{children}</main>
-      </div>
-    </div>
+        <Box component="main" sx={{ flex: 1, overflowY: 'auto' }}>
+          {children}
+        </Box>
+      </Box>
+    </Box>
   );
 }

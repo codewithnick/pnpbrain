@@ -5,7 +5,7 @@
  * All variables are already declared in that function scope.
  *
  * @var string  $backend_url
- * @var string  $business_id
+ * @var string  $public_token
  * @var string  $primary_color
  * @var string  $bot_name
  * @var string  $welcome_msg
@@ -48,22 +48,22 @@ defined( 'ABSPATH' ) || exit;
 
             <tr>
                 <th scope="row">
-                    <label for="gcfis_business_id">
-                        <?php esc_html_e( 'Business ID', 'gcfis-widget' ); ?>
+                    <label for="gcfis_public_token">
+                        <?php esc_html_e( 'Public Token', 'gcfis-widget' ); ?>
                     </label>
                 </th>
                 <td>
                     <input
                         type="text"
-                        id="gcfis_business_id"
-                        name="<?php echo esc_attr( GCFIS_WIDGET_OPTION ); ?>[business_id]"
-                        value="<?php echo esc_attr( $business_id ); ?>"
+                        id="gcfis_public_token"
+                        name="<?php echo esc_attr( GCFIS_WIDGET_OPTION ); ?>[public_token]"
+                        value="<?php echo esc_attr( $public_token ); ?>"
                         class="regular-text"
-                        placeholder="biz_xxxxxxxxxxxxxxxx"
+                        placeholder="gcfis_public.xxxxx.yyyyy"
                         autocomplete="off"
                     />
                     <p class="description">
-                        <?php esc_html_e( 'Found in Settings → API Keys inside the GCFIS Admin dashboard.', 'gcfis-widget' ); ?>
+                        <?php esc_html_e( 'Use the public chat token from your GCFIS Admin dashboard.', 'gcfis-widget' ); ?>
                     </p>
                 </td>
             </tr>
@@ -158,13 +158,13 @@ defined( 'ABSPATH' ) || exit;
     </p>
     <p>
         <?php esc_html_e( 'Or override settings per-instance:', 'gcfis-widget' ); ?>
-        <code>[gcfis_widget business_id="your-id" backend_url="https://api.example.com" bot_name="Aria"]</code>
+        <code>[gcfis_widget public_token="your-token" backend_url="https://api.example.com" bot_name="Aria"]</code>
     </p>
 
     <h2><?php esc_html_e( 'Connection Status', 'gcfis-widget' ); ?></h2>
-    <?php if ( empty( $backend_url ) || empty( $business_id ) ) : ?>
+    <?php if ( empty( $backend_url ) || empty( $public_token ) ) : ?>
         <p class="gcfis-status gcfis-status--warn">
-            &#9888; <?php esc_html_e( 'Not configured. Enter your Backend URL and Business ID above.', 'gcfis-widget' ); ?>
+            &#9888; <?php esc_html_e( 'Not configured. Enter your Backend URL and Public Token above.', 'gcfis-widget' ); ?>
         </p>
     <?php else : ?>
         <p class="gcfis-status gcfis-status--ok">

@@ -6,7 +6,7 @@
  *
  *   <script
  *     src="https://cdn.gcfis.com/widget/gcfis-widget.js"
- *     data-business-id="YOUR_BUSINESS_ID"
+ *     data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
  *     data-backend-url="https://api.gcfis.com"
  *     data-bot-name="My Assistant"
  *     data-primary-color="#6366f1"
@@ -32,8 +32,13 @@ function buildConfigFromDataset(
   dataset: DOMStringMap,
   fallback: Partial<WidgetConfig>
 ): WidgetConfig {
+  const publicToken = dataset['publicToken'] ?? fallback.publicToken;
+  if (!publicToken) {
+    throw new Error('[GCFIS] data-public-token attribute is required. Widget not mounted.');
+  }
+
   return {
-    businessId: dataset['businessId'] ?? fallback.businessId ?? '',
+    publicToken,
     backendUrl: dataset['backendUrl'] ?? fallback.backendUrl ?? 'https://api.gcfis.com',
     botName: dataset['botName'] ?? fallback.botName ?? 'Assistant',
     primaryColor: dataset['primaryColor'] ?? fallback.primaryColor ?? '#6366f1',
@@ -49,9 +54,11 @@ function buildConfigFromDataset(
   const mountNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-gcfis-mount="1"]'));
   if (mountNodes.length > 0) {
     for (const mountNode of mountNodes) {
-      const config = buildConfigFromDataset(mountNode.dataset, fallbackConfig);
-      if (!config.businessId) {
-        console.error('[GCFIS] data-business-id attribute is required. Widget not mounted.');
+      let config: WidgetConfig;
+      try {
+        config = buildConfigFromDataset(mountNode.dataset, fallbackConfig);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : '[GCFIS] Invalid widget config. Widget not mounted.');
         continue;
       }
 
@@ -64,17 +71,18 @@ function buildConfigFromDataset(
   // Find the script tag that loaded this file
   const scriptTag =
     document.currentScript as HTMLScriptElement | null ??
-    document.querySelector('script[data-business-id]');
+    document.querySelector('script[data-public-token]');
 
   if (!scriptTag) {
     console.error('[GCFIS] Could not find embed script tag. Widget not mounted.');
     return;
   }
 
-  const config = buildConfigFromDataset(scriptTag.dataset, fallbackConfig);
-
-  if (!config.businessId) {
-    console.error('[GCFIS] data-business-id attribute is required. Widget not mounted.');
+  let config: WidgetConfig;
+  try {
+    config = buildConfigFromDataset(scriptTag.dataset, fallbackConfig);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : '[GCFIS] Invalid widget config. Widget not mounted.');
     return;
   }
 

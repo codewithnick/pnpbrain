@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   // Fetch owner email from Supabase for Stripe customer creation
   const supabaseUrl = process.env['NEXT_PUBLIC_SUPABASE_URL']!;
   const serviceKey =
-    process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY']!;
+    process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY']!;
   const supabase = createClient(supabaseUrl, serviceKey);
   const { data: { user } } = await supabase.auth.admin.getUserById(auth.userId);
   const email = user?.email ?? '';

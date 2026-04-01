@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { fetchBackend } from '@/lib/supabase';
 
 const fieldCls =
-  'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition';
+  'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
 export default function ThemeSettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -79,7 +79,7 @@ export default function ThemeSettingsPage() {
     setTimeout(() => setSuccess(false), 3000);
   }
 
-  if (loading) return <div className="text-sm text-gray-400 py-8">Loading…</div>;
+  if (loading) return <div className="text-sm text-gray-400 dark:text-slate-500 py-8">Loading…</div>;
 
   return (
     <form onSubmit={handleSave} className="space-y-6 max-w-xl">
@@ -88,7 +88,7 @@ export default function ThemeSettingsPage() {
 
       <Card title="Visual identity" description="Customize the color and assistant name customers see in the widget.">
         <div className="grid gap-4 sm:grid-cols-[120px_1fr] sm:items-center">
-          <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-12 w-24 rounded-lg border border-gray-200 bg-white" />
+          <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-12 w-24 rounded-lg border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900" />
           <input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className={`${fieldCls} font-mono`} />
         </div>
         <div className="mt-4">
@@ -111,15 +111,15 @@ export default function ThemeSettingsPage() {
             <option value="dark">Dark</option>
           </select>
         </div>
-        <label className="mt-4 flex items-center gap-3 text-sm text-gray-600">
+        <label className="mt-4 flex items-center gap-3 text-sm text-gray-600 dark:text-slate-300">
           <input type="checkbox" checked={showAvatar} onChange={(e) => setShowAvatar(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
           Show the assistant avatar in the chat header
         </label>
       </Card>
 
-      <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-        <p className="text-sm font-semibold text-gray-900">Preview</p>
-        <div className="mt-4 max-w-sm rounded-3xl border border-gray-200 bg-gray-50 p-4">
+      <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">Preview</p>
+        <div className="mt-4 max-w-sm rounded-3xl border border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-800">
           <div className={`rounded-2xl px-4 py-3 text-white ${widgetTheme === 'dark' ? 'bg-gray-900' : ''}`} style={widgetTheme === 'light' ? { backgroundColor: primaryColor } : undefined}>
             <div className="flex items-center gap-3">
               {showAvatar && (
@@ -133,10 +133,10 @@ export default function ThemeSettingsPage() {
               </div>
             </div>
           </div>
-          <div className="mt-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
             {welcomeMessage}
           </div>
-          <div className="mt-3 text-xs text-gray-400">Launcher position: {widgetPosition.replace('-', ' ')}</div>
+          <div className="mt-3 text-xs text-gray-400 dark:text-slate-500">Launcher position: {widgetPosition.replace('-', ' ')}</div>
         </div>
       </div>
 
@@ -151,9 +151,9 @@ export default function ThemeSettingsPage() {
 
 function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h3 className="text-sm font-semibold text-gray-900 mb-0.5">{title}</h3>
-      {description && <p className="text-xs text-gray-500 mb-3">{description}</p>}
+    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">{title}</h3>
+      {description && <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">{description}</p>}
       {children}
     </div>
   );
@@ -162,7 +162,7 @@ function Card({ title, description, children }: { title: string; description?: s
 function Alert({ type, message }: { type: 'error' | 'success'; message: string }) {
   return (
     <div className={`rounded-lg border px-4 py-3 text-sm ${
-      type === 'error' ? 'bg-red-50 border-red-200 text-red-600' : 'bg-green-50 border-green-200 text-green-700'
+      type === 'error' ? 'bg-red-50 border-red-200 text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300' : 'bg-green-50 border-green-200 text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300'
     }`}>
       {message}
     </div>

@@ -1,77 +1,122 @@
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import BoltRoundedIcon from '@mui/icons-material/BoltRounded';
+import {
+  Box,
+  Button,
+  Chip,
+  Container,
+  Paper,
+  Stack,
+  Typography,
+} from '@mui/material';
 import Link from 'next/link';
 
 const adminBaseUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3002';
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-b from-brand-50 to-white px-6 py-24 text-center">
-      {/* Decorative blob */}
-      <div
+    <Box
+      component="section"
+      sx={{
+        position: 'relative',
+        overflow: 'hidden',
+        pt: { xs: 12, md: 16 },
+        pb: { xs: 10, md: 14 },
+      }}
+    >
+      <Box
         aria-hidden
-        className="pointer-events-none absolute -top-32 left-1/2 -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-brand-100 opacity-40 blur-3xl"
+        sx={{
+          position: 'absolute',
+          top: -180,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 760,
+          height: 760,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(14, 165, 233, 0.2), rgba(59, 130, 246, 0.03) 65%, transparent)',
+        }}
       />
 
-      <div className="relative mx-auto max-w-3xl">
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-brand-100 bg-white px-4 py-1.5 text-sm font-medium text-brand-600 shadow-sm">
-          <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
-          Powered by local Ollama &amp; LangGraph.js
-        </div>
+      <Container maxWidth="md" sx={{ position: 'relative', textAlign: 'center' }}>
+        <Chip
+          icon={<BoltRoundedIcon fontSize="small" />}
+          label="Powered by local Ollama and LangGraph.js"
+          sx={{
+            bgcolor: 'background.paper',
+            border: '1px solid rgba(14, 165, 233, 0.24)',
+            mb: 3,
+          }}
+        />
 
-        <h1 className="text-5xl font-extrabold tracking-tight text-gray-900 sm:text-6xl">
-          Your customers deserve{' '}
-          <span className="text-brand-600">an intelligent assistant</span>
-        </h1>
+        <Typography
+          variant="h1"
+          sx={{
+            fontSize: { xs: '2.2rem', sm: '3rem', md: '3.5rem' },
+            lineHeight: 1.05,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          Your customers deserve an intelligent assistant
+        </Typography>
 
-        <p className="mt-6 text-xl text-gray-500 leading-relaxed">
-          GCFIS embeds a RAG-powered AI chat widget on your website in minutes.
-          It learns from your knowledge base, remembers customers, and handles
-          questions 24 / 7 — without you lifting a finger.
-        </p>
+        <Typography sx={{ mt: 3, fontSize: { xs: '1rem', md: '1.2rem' }, color: 'text.secondary' }}>
+          GCFIS embeds a RAG-powered AI chat widget on your website in minutes. It learns from your knowledge base,
+          remembers customers, and handles questions 24/7.
+        </Typography>
 
-        <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="center" sx={{ mt: 4 }}>
+          <Button
+            component={Link}
             href={`${adminBaseUrl}/signup`}
-            className="rounded-xl bg-brand-500 px-8 py-3.5 text-base font-semibold text-white shadow-lg hover:bg-brand-600 transition-colors"
+            size="large"
+            variant="contained"
+            endIcon={<ArrowForwardRoundedIcon fontSize="small" />}
+            sx={{ px: 3, py: 1.2, borderRadius: 2.5 }}
           >
-            Start for free →
-          </Link>
-          <a
-            href="#how-it-works"
-            className="rounded-xl border border-gray-200 bg-white px-8 py-3.5 text-base font-semibold text-gray-700 hover:border-brand-300 transition-colors"
-          >
+            Start for free
+          </Button>
+          <Button href="#how-it-works" size="large" variant="outlined" sx={{ px: 3, py: 1.2, borderRadius: 2.5 }}>
             See how it works
-          </a>
-        </div>
-      </div>
+          </Button>
+        </Stack>
+      </Container>
 
-      {/* Fake widget preview */}
-      <div className="relative mx-auto mt-20 max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden text-left">
-        <div className="flex items-center gap-3 bg-brand-500 px-4 py-3 text-white">
-          <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-sm">
-            G
-          </div>
-          <div>
-            <p className="text-sm font-semibold">GCFIS Assistant</p>
-            <p className="text-xs opacity-70">Online</p>
-          </div>
-        </div>
-        <div className="p-4 space-y-3">
-          <div className="rounded-xl bg-brand-50 px-3 py-2 text-sm text-gray-700 max-w-[80%]">
-            Hi! How can I help you today?
-          </div>
-          <div className="ml-auto rounded-xl bg-brand-500 px-3 py-2 text-sm text-white max-w-[80%]">
-            What are your business hours?
-          </div>
-          <div className="rounded-xl bg-brand-50 px-3 py-2 text-sm text-gray-700 max-w-[80%]">
-            We're open Monday–Friday 9AM–6PM and Saturday 10AM–4PM.
-          </div>
-        </div>
-        <div className="border-t border-gray-100 px-4 py-3">
-          <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-400">
-            Type a message…
-          </div>
-        </div>
-      </div>
-    </section>
+      <Container maxWidth="sm" sx={{ mt: { xs: 6, md: 8 } }}>
+        <Paper sx={{ borderRadius: 4, overflow: 'hidden', boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.4, bgcolor: 'primary.main', color: '#ecfeff' }}>
+            <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: 'rgba(236, 254, 255, 0.25)', display: 'grid', placeItems: 'center', fontWeight: 800 }}>
+              G
+            </Box>
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                GCFIS Assistant
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                Online
+              </Typography>
+            </Box>
+          </Box>
+          <Stack spacing={1.2} sx={{ p: 2 }}>
+            <Paper sx={{ p: 1.2, borderRadius: 2, maxWidth: '80%', bgcolor: 'rgba(15, 118, 110, 0.08)' }}>
+              <Typography variant="body2">Hi! How can I help you today?</Typography>
+            </Paper>
+            <Paper sx={{ p: 1.2, borderRadius: 2, maxWidth: '80%', ml: 'auto', bgcolor: 'primary.main', color: '#ecfeff' }}>
+              <Typography variant="body2">What are your business hours?</Typography>
+            </Paper>
+            <Paper sx={{ p: 1.2, borderRadius: 2, maxWidth: '80%', bgcolor: 'rgba(15, 118, 110, 0.08)' }}>
+              <Typography variant="body2">Monday-Friday 9AM-6PM and Saturday 10AM-4PM.</Typography>
+            </Paper>
+          </Stack>
+          <Box sx={{ borderTop: '1px solid rgba(148, 163, 184, 0.2)', px: 2, py: 1.4 }}>
+            <Paper sx={{ p: 1.1, borderRadius: 2, bgcolor: 'rgba(148, 163, 184, 0.12)' }}>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Type a message...
+              </Typography>
+            </Paper>
+          </Box>
+        </Paper>
+      </Container>
+    </Box>
   );
 }

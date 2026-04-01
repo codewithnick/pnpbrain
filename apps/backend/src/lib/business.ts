@@ -3,8 +3,14 @@
  * Used by chat + knowledge routes to load allowed domains, bot name, etc.
  */
 
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { getDb } from '@gcfis/db/client';
-import { businesses } from '@gcfis/db/schema';
+import {
+  businessMeetingIntegrations,
+  businessSkillSettings,
+  businesses,
+  SKILL_NAMES,
+} from '@gcfis/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import type { Business } from '@gcfis/db';
 
@@ -97,11 +103,30 @@ export async function createBusiness(data: {
   const db = getDb();
   const [business] = await db
     .insert(businesses)
-    .values({ name: data.name, slug: data.slug, ownerUserId: data.ownerUserId })
+    .values({
+      name: data.name,
+      slug: data.slug,
+      ownerUserId: data.ownerUserId,
+      agentApiKey: generateBusinessApiKey(),
+    })
     .returning();
   if (!business) {
     throw new Error('Failed to create business');
   }
+
+  await db.insert(businessSkillSettings).values(
+    SKILL_NAMES.map((skillName) => ({
+      businessId: business.id,
+      skillName,
+      enabled: skillName === 'calculator' || skillName === 'datetime',
+    }))
+  );
+
+  await db.insert(businessMeetingIntegrations).values({
+    businessId: business.id,
+    provider: 'none',
+  });
+
   storeCached(business);
   return business;
 }
@@ -113,7 +138,6 @@ export type UpdateBusinessPayload = Partial<
     | 'slug'
     | 'description'
     | 'allowedDomains'
-    | 'enabledSkills'
     | 'llmProvider'
     | 'llmModel'
     | 'llmApiKey'
@@ -124,6 +148,7 @@ export type UpdateBusinessPayload = Partial<
     | 'widgetPosition'
     | 'widgetTheme'
     | 'showAvatar'
+    | 'agentApiKey'
   >
 >;
 
@@ -163,6 +188,112 @@ export function parseAllowedDomains(domains: string): string[] {
   }
 }
 
+export function generateBusinessApiKey(): string {
+  return `gcfis_live_${randomBytes(24).toString('base64url')}`;
+}
+
+export async function ensureBusinessApiKey(business: Business): Promise<Business> {
+  if (business.agentApiKey) {
+    return business;
+  }
+
+  const updated = await updateBusiness(business.id, { agentApiKey: generateBusinessApiKey() });
+  return updated ?? business;
+}
+
+/**
+ * Loads a business by its API key (used to authenticate MCP and external API requests).
+ * Returns null if no business has this key.
+ */
+export async function getBusinessByApiKey(apiKey: string): Promise<Business | null> {
+  if (!apiKey || !apiKey.startsWith('gcfis_live_')) return null;
+
+  const db = getDb();
+  const [business] = await db
+    .select()
+    .from(businesses)
+    .where(eq(businesses.agentApiKey, apiKey))
+    .limit(1);
+
+  if (!business) return null;
+
+  storeCached(business);
+  return business;
+}
+
+interface PublicChatTokenPayload {
+  type: 'public-chat';
+  businessId: string;
+  slug: string;
+  iat: number;
+}
+
+const PUBLIC_CHAT_TOKEN_PREFIX = 'gcfis_public';
+const PUBLIC_CHAT_TOKEN_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7;
+
+function getPublicChatTokenSecret(): string | null {
+  return process.env['PUBLIC_CHAT_TOKEN_SECRET']
+    ?? process.env['SUPABASE_SERVICE_ROLE_KEY']
+    ?? null;
+}
+
+export function generatePublicChatToken(business: Pick<Business, 'id' | 'slug'>): string {
+  const secret = getPublicChatTokenSecret();
+  if (!secret) {
+    throw new Error('PUBLIC_CHAT_TOKEN_SECRET or SUPABASE_SERVICE_ROLE_KEY must be configured');
+  }
+
+  const payload: PublicChatTokenPayload = {
+    type: 'public-chat',
+    businessId: business.id,
+    slug: business.slug,
+    iat: Date.now(),
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+
+  return `${PUBLIC_CHAT_TOKEN_PREFIX}.${encodedPayload}.${signature}`;
+}
+
+export function verifyPublicChatToken(token: string): PublicChatTokenPayload | null {
+  const secret = getPublicChatTokenSecret();
+  if (!secret || !token.startsWith(`${PUBLIC_CHAT_TOKEN_PREFIX}.`)) {
+    return null;
+  }
+
+  const [, encodedPayload, providedSignature] = token.split('.');
+  if (!encodedPayload || !providedSignature) {
+    return null;
+  }
+
+  const expectedSignature = createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  const providedBuffer = Buffer.from(providedSignature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return null;
+  }
+
+  if (!timingSafeEqual(providedBuffer, expectedBuffer)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as PublicChatTokenPayload;
+    if (payload.type !== 'public-chat' || !payload.businessId || !payload.slug || !payload.iat) {
+      return null;
+    }
+
+    if (Date.now() - payload.iat > PUBLIC_CHAT_TOKEN_MAX_AGE_MS) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Normalises domain allowlist entries so callers can safely compare against URL hostnames.
  * Accepts either full URLs or bare hostnames and always returns lowercased hostnames.
@@ -178,6 +309,17 @@ export function normalizeAllowedDomains(domains: string[]): string[] {
   }
 
   return [...unique];
+}
+
+export function isAllowedHostname(hostname: string, allowedDomains: string[]): boolean {
+  const normalizedHostname = hostname.trim().toLowerCase();
+  if (!normalizedHostname) {
+    return false;
+  }
+
+  return allowedDomains.some(
+    (domain) => normalizedHostname === domain || normalizedHostname.endsWith(`.${domain}`)
+  );
 }
 
 function normalizeAllowedDomain(value: string): string | null {

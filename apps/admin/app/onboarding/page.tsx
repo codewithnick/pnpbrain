@@ -41,6 +41,8 @@ const LLM_OPTIONS = [
 const SKILL_OPTIONS = [
   { key: 'calculator', label: '🔢 Calculator',    desc: 'Perform arithmetic in the conversation' },
   { key: 'datetime',   label: '🕐 Date & Time',   desc: 'Answer questions about dates and timezones' },
+  { key: 'lead_qualification', label: '🎯 Lead Qualification', desc: 'Qualify prospects with deal-readiness scoring' },
+  { key: 'meeting_scheduler', label: '📅 Meeting Scheduler', desc: 'Propose and book meetings with connected providers' },
   { key: 'firecrawl',  label: '🕷️ Web Scraping',  desc: 'Crawl allowed domains and inject fresh content' },
 ];
 

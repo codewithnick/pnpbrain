@@ -114,6 +114,7 @@ export type UpdateBusinessPayload = Partial<
     | 'description'
     | 'allowedDomains'
     | 'enabledSkills'
+    | 'meetingIntegration'
     | 'llmProvider'
     | 'llmModel'
     | 'llmApiKey'

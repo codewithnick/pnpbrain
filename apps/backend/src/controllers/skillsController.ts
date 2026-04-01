@@ -5,8 +5,8 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
 import { chunkText, getEmbeddingModel } from '@gcfis/agent/rag';
-import { getBusinessById, getBusinessByOwner, parseAllowedDomains } from '../lib/business';
-import { requireApiKey, requireSupabaseAuth } from '../middleware/auth';
+import { getBusinessById, parseAllowedDomains } from '../lib/business';
+import { requireApiKey, requireBusinessAuth } from '../middleware/auth';
 
 const requestSchema = z.object({
   businessId: z.string().uuid().optional(),
@@ -52,21 +52,15 @@ export class SkillsController {
   };
 
   private async resolveBusinessForFirecrawl(
-    req: Parameters<typeof requireSupabaseAuth>[0],
-    res: Parameters<typeof requireSupabaseAuth>[1],
+    req: Parameters<typeof requireBusinessAuth>[0],
+    res: Parameters<typeof requireBusinessAuth>[1],
     businessId?: string
   ) {
     if (req.header('authorization')?.startsWith('Bearer ')) {
-      const auth = await requireSupabaseAuth(req, res);
+      const auth = await requireBusinessAuth(req, res, 'member');
       if (!auth) return null;
 
-      const business = await getBusinessByOwner(auth.userId);
-      if (!business) {
-        res.status(404).json({ ok: false, error: 'No business found. Complete onboarding first.' });
-        return null;
-      }
-
-      return business;
+      return getBusinessById(auth.businessId);
     }
 
     if (!requireApiKey(req, res)) return null;

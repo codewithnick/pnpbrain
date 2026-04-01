@@ -5,3 +5,6 @@
 export { createFirecrawlTool } from './firecrawl.js';
 export { calculatorTool } from './calculator.js';
 export { datetimeTool } from './datetime.js';
+export { leadQualificationTool } from './lead-qualification.js';
+export { meetingSchedulerTool } from './meeting-scheduler.js';
+export { createMeetingBookingTool } from './meeting-booking.js';

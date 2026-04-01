@@ -6,8 +6,7 @@ import { getDb } from '@gcfis/db/client';
 import { knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
 import { chunkText, getEmbeddingModel } from '@gcfis/agent/rag';
 import { S3KnowledgeStorageService } from '../lib/s3-knowledge';
-import { getBusinessByOwner } from '../lib/business';
-import { requireApiKey, requireSupabaseAuth } from '../middleware/auth';
+import { requireApiKey, requireBusinessAuth } from '../middleware/auth';
 
 const createDocSchema = z.object({
   businessId: z.string().uuid().optional(),
@@ -262,21 +261,15 @@ export class KnowledgeController {
   };
 
   private async resolveBusinessScope(
-    req: Parameters<typeof requireSupabaseAuth>[0],
-    res: Parameters<typeof requireSupabaseAuth>[1],
+    req: Parameters<typeof requireBusinessAuth>[0],
+    res: Parameters<typeof requireBusinessAuth>[1],
     requestedBusinessId?: string | null
   ): Promise<{ businessId: string } | null> {
     if (req.header('authorization')?.startsWith('Bearer ')) {
-      const auth = await requireSupabaseAuth(req, res);
+      const auth = await requireBusinessAuth(req, res, 'member');
       if (!auth) return null;
 
-      const business = await getBusinessByOwner(auth.userId);
-      if (!business) {
-        res.status(404).json({ ok: false, error: 'No business found. Complete onboarding first.' });
-        return null;
-      }
-
-      return { businessId: business.id };
+      return { businessId: auth.businessId };
     }
 
     if (!requireApiKey(req, res)) return null;

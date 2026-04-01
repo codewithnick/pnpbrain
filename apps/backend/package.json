@@ -13,6 +13,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.893.0",
     "@gcfis/agent": "workspace:*",
     "@gcfis/db": "workspace:*",
     "@gcfis/tools": "workspace:*",
@@ -21,8 +22,8 @@
     "@langchain/langgraph": "^0.2.40",
     "@langchain/ollama": "^0.1.5",
     "@mendable/firecrawl-js": "^1.16.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/supabase-js": "^2.47.10",
-    "@aws-sdk/client-s3": "^3.893.0",
     "drizzle-orm": "^0.38.3",
     "express": "^4.18.2",
     "multer": "^1.4.5-lts.1",

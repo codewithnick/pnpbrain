@@ -3,8 +3,8 @@
  */
 
 export interface WidgetConfig {
-  /** Injected by the business owner's embed script */
-  businessId: string;
+  /** Backend-issued public chat token for hosted/public traffic */
+  publicToken: string;
   /** Backend API base URL */
   backendUrl: string;
   /** Display name shown in the chat header */

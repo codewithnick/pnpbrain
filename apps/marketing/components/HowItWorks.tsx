@@ -1,3 +1,12 @@
+import {
+  Box,
+  Container,
+  Grid,
+  Paper,
+  Stack,
+  Typography,
+} from '@mui/material';
+
 const steps = [
   {
     number: '01',
@@ -27,27 +36,52 @@ const steps = [
 
 export default function HowItWorks() {
   return (
-    <section id="how-it-works" className="py-24 px-6 bg-brand-50">
-      <div className="mx-auto max-w-4xl">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-gray-900">How it works</h2>
-          <p className="mt-4 text-lg text-gray-500">Four steps from signup to live AI assistant.</p>
-        </div>
+    <Box id="how-it-works" component="section" sx={{ py: { xs: 10, md: 13 }, px: 2, bgcolor: 'rgba(14, 116, 144, 0.06)' }}>
+      <Container maxWidth="md">
+        <Box sx={{ textAlign: 'center', mb: 6 }}>
+          <Typography variant="h3" sx={{ fontSize: { xs: '2rem', md: '2.5rem' } }}>
+            How it works
+          </Typography>
+          <Typography sx={{ mt: 1.5, color: 'text.secondary' }}>
+            Four steps from signup to live AI assistant.
+          </Typography>
+        </Box>
 
-        <div className="space-y-8">
+        <Grid container spacing={2}>
           {steps.map((step, i) => (
-            <div key={step.number} className="flex items-start gap-6">
-              <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-brand-500 text-white font-bold text-sm">
-                {step.number}
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">{step.title}</h3>
-                <p className="mt-1 text-gray-500 leading-relaxed">{step.description}</p>
-              </div>
-            </div>
+            <Grid key={step.number} size={12}>
+              <Paper sx={{ p: 2.2, borderRadius: 3, bgcolor: 'background.paper' }}>
+                <Stack direction="row" spacing={2}>
+                  <Box
+                    sx={{
+                      flexShrink: 0,
+                      width: 42,
+                      height: 42,
+                      borderRadius: '50%',
+                      display: 'grid',
+                      placeItems: 'center',
+                      bgcolor: 'primary.main',
+                      color: '#ecfeff',
+                      fontWeight: 700,
+                      fontSize: 12,
+                    }}
+                  >
+                    {step.number}
+                  </Box>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontSize: '1.02rem' }}>
+                      {step.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.4, lineHeight: 1.7 }}>
+                      {step.description}
+                    </Typography>
+                  </Box>
+                </Stack>
+              </Paper>
+            </Grid>
           ))}
-        </div>
-      </div>
-    </section>
+        </Grid>
+      </Container>
+    </Box>
   );
 }

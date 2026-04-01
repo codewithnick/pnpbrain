@@ -1,3 +1,12 @@
+import {
+  Box,
+  Card,
+  CardContent,
+  Container,
+  Grid,
+  Typography,
+} from '@mui/material';
+
 const features = [
   {
     icon: '🧠',
@@ -39,30 +48,38 @@ const features = [
 
 export default function Features() {
   return (
-    <section id="features" className="py-24 px-6 bg-white">
-      <div className="mx-auto max-w-6xl">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-gray-900">
+    <Box id="features" component="section" sx={{ py: { xs: 10, md: 13 }, px: 2 }}>
+      <Container maxWidth="lg">
+        <Box sx={{ textAlign: 'center', mb: 7 }}>
+          <Typography variant="h3" sx={{ fontSize: { xs: '2rem', md: '2.5rem' } }}>
             Everything your AI assistant needs
-          </h2>
-          <p className="mt-4 text-lg text-gray-500">
-            A full-stack, production-ready platform — not just a chatbot wrapper.
-          </p>
-        </div>
+          </Typography>
+          <Typography sx={{ mt: 1.5, color: 'text.secondary' }}>
+            A full-stack, production-ready platform, not just a chatbot wrapper.
+          </Typography>
+        </Box>
 
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+        <Grid container spacing={2.5}>
           {features.map((f) => (
-            <div
+            <Grid
               key={f.title}
-              className="rounded-2xl border border-gray-100 bg-gray-50 p-6 hover:border-brand-200 hover:shadow-md transition-all"
+              size={{ xs: 12, sm: 6, lg: 4 }}
             >
-              <div className="text-3xl mb-4">{f.icon}</div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{f.title}</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">{f.description}</p>
-            </div>
+              <Card sx={{ height: '100%', borderRadius: 3, bgcolor: 'background.paper' }}>
+                <CardContent>
+                  <Typography sx={{ fontSize: 30, mb: 1.5 }}>{f.icon}</Typography>
+                  <Typography variant="h6" sx={{ fontSize: '1.05rem', mb: 0.8 }}>
+                    {f.title}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                    {f.description}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
           ))}
-        </div>
-      </div>
-    </section>
+        </Grid>
+      </Container>
+    </Box>
   );
 }

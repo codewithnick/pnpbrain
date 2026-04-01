@@ -9,9 +9,9 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import type { StreamEvent } from '@gcfis/types';
 
 interface BusinessConfig {
-  id:             string;
   name:           string;
   slug:           string;
   botName:        string;
@@ -19,6 +19,7 @@ interface BusinessConfig {
   primaryColor:   string;
   widgetTheme:    'light' | 'dark' | string;
   showAvatar:     boolean;
+  publicChatToken: string;
 }
 
 interface Message {
@@ -38,6 +39,7 @@ export default function PublicChat({ config }: Props) {
   const [messages,   setMessages]   = useState<Message[]>([]);
   const [input,      setInput]      = useState('');
   const [streaming,  setStreaming]  = useState(false);
+  const [threadId,   setThreadId]   = useState<string | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
 
@@ -69,9 +71,9 @@ export default function PublicChat({ config }: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          businessId: config.id,
-          message:    text.trim(),
-          history:    messages.map((m) => ({ role: m.role, content: m.content })),
+          message: text.trim(),
+          publicToken: config.publicChatToken,
+          ...(threadId ? { threadId } : {}),
         }),
       });
 
@@ -93,17 +95,37 @@ export default function PublicChat({ config }: Props) {
           if (!line.startsWith('data: ')) continue;
           const payload = line.slice(6).trim();
           if (payload === '[DONE]') break;
+
           try {
-            const parsed = JSON.parse(payload) as { delta?: string };
-            if (parsed.delta) {
+            const event = JSON.parse(payload) as StreamEvent;
+
+            if (event.type === 'token') {
               setMessages((prev) => {
                 const next = [...prev];
                 const last = next[next.length - 1];
                 if (last?.role === 'assistant') {
-                  next[next.length - 1] = { ...last, content: last.content + parsed.delta };
+                  next[next.length - 1] = { ...last, content: last.content + event.token };
                 }
                 return next;
               });
+              continue;
+            }
+
+            if (event.type === 'done') {
+              setThreadId(event.threadId);
+              setMessages((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last?.role === 'assistant') {
+                  next[next.length - 1] = { ...last, content: event.message.content };
+                }
+                return next;
+              });
+              continue;
+            }
+
+            if (event.type === 'error') {
+              throw new Error(event.error);
             }
           } catch {
             // ignore malformed SSE frames

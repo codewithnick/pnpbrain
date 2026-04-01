@@ -1,5 +1,27 @@
 import { Request, Response } from 'express';
-import { getBusinessBySlug } from '../lib/business';
+import { z } from 'zod';
+import {
+  generatePublicChatToken,
+  getBusinessBySlug,
+  isAllowedHostname,
+  parseAllowedDomains,
+} from '../lib/business';
+
+const widgetSessionSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9-]+$/),
+}).strict();
+
+function extractOriginHostname(origin: string | undefined): string | null {
+  if (!origin) {
+    return null;
+  }
+
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
 
 export class PublicController {
   public readonly getBusinessBySlug = async (req: Request, res: Response) => {
@@ -25,6 +47,40 @@ export class PublicController {
         widgetPosition: business.widgetPosition,
         widgetTheme: business.widgetTheme,
         showAvatar: business.showAvatar,
+        publicChatToken: generatePublicChatToken(business),
+      },
+    });
+  };
+
+  public readonly createWidgetSession = async (req: Request, res: Response) => {
+    const parsed = widgetSessionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.issues.map((issue) => issue.message).join(', ') });
+    }
+
+    const business = await getBusinessBySlug(parsed.data.slug);
+
+    if (!business) {
+      return res.status(404).json({ ok: false, error: 'Business not found' });
+    }
+
+    const allowedDomains = parseAllowedDomains(business.allowedDomains);
+    const originHostname = extractOriginHostname(req.header('origin'));
+    if (allowedDomains.length > 0 && (!originHostname || !isAllowedHostname(originHostname, allowedDomains))) {
+      return res.status(401).json({ ok: false, error: 'Origin is not allowed for this business' });
+    }
+
+    return res.json({
+      ok: true,
+      data: {
+        slug: business.slug,
+        botName: business.botName,
+        welcomeMessage: business.welcomeMessage,
+        primaryColor: business.primaryColor,
+        widgetTheme: business.widgetTheme,
+        widgetPosition: business.widgetPosition,
+        showAvatar: business.showAvatar,
+        publicChatToken: generatePublicChatToken(business),
       },
     });
   };

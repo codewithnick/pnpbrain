@@ -22,7 +22,7 @@ interface ChatWidgetProps {
 
 export default function ChatWidget({ config }: ChatWidgetProps) {
   const {
-    businessId,
+    publicToken,
     backendUrl,
     botName = 'Assistant',
     primaryColor = '#6366f1',
@@ -61,7 +61,7 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
         const res = await fetch(`${backendUrl}/api/agent/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, businessId, threadId }),
+          body: JSON.stringify({ message: text, publicToken, threadId }),
         });
 
         if (!res.ok || !res.body) {
@@ -130,7 +130,7 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
         setThinking(false);
       }
     },
-    [backendUrl, businessId, threadId, thinking]
+    [backendUrl, publicToken, threadId, thinking]
   );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {

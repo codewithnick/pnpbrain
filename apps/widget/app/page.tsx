@@ -15,7 +15,7 @@ export default function WidgetPreviewPage() {
       </div>
       <ChatWidget
         config={{
-          businessId: process.env['NEXT_PUBLIC_BUSINESS_ID'] ?? 'preview',
+          publicToken: process.env['NEXT_PUBLIC_PUBLIC_CHAT_TOKEN'] ?? 'preview-public-token',
           backendUrl: process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3001',
           botName: 'GCFIS Assistant',
           primaryColor: '#6366f1',

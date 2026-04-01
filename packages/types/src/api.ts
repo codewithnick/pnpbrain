@@ -11,8 +11,8 @@ export interface ChatRequest {
   message: string;
   /** Conversation thread ID — omit to start a new conversation */
   threadId?: string;
-  /** Business / installation ID so the backend loads the right knowledge base */
-  businessId: string;
+  /** Backend-issued public chat token used by hosted/public clients */
+  publicToken?: string;
 }
 
 export interface ChatResponse {
@@ -103,6 +103,55 @@ export interface MemoryFact {
   threadId: string;
   fact: string;
   createdAt: string;
+}
+
+// ─── /api/team/* ─────────────────────────────────────────────────────────────
+
+import type { BusinessMemberRole } from './user.js';
+
+export interface TeamMember {
+  id: string;
+  userId: string;
+  email: string;
+  role: BusinessMemberRole;
+  invitedBy: string | null;
+  createdAt: string;
+}
+
+export interface PendingInvitation {
+  id: string;
+  email: string;
+  role: Exclude<BusinessMemberRole, 'owner'>;
+  invitedBy: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface InviteTeamMemberRequest {
+  email: string;
+  role: Exclude<BusinessMemberRole, 'owner'>;
+}
+
+export interface InviteTeamMemberResponse {
+  invitation: PendingInvitation;
+  /** Full accept URL — share with the invitee. */
+  acceptUrl: string;
+}
+
+export interface UpdateMemberRoleRequest {
+  role: Exclude<BusinessMemberRole, 'owner'>;
+}
+
+export interface AcceptInvitationRequest {
+  token: string;
+}
+
+export interface InvitationDetail {
+  id: string;
+  businessName: string;
+  email: string;
+  role: Exclude<BusinessMemberRole, 'owner'>;
+  expiresAt: string;
 }
 
 // ─── Generic API envelope ─────────────────────────────────────────────────────

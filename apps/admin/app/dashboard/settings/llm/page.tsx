@@ -21,7 +21,7 @@ const DEFAULT_MODELS: Record<string, string> = {
 };
 
 const fieldCls =
-  'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition';
+  'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
 export default function LlmSettingsPage() {
   const [loading, setLoading]     = useState(true);
@@ -78,7 +78,7 @@ export default function LlmSettingsPage() {
     setTimeout(() => setSuccess(false), 3000);
   }
 
-  if (loading) return <div className="text-sm text-gray-400 py-8">Loading…</div>;
+  if (loading) return <div className="text-sm text-gray-400 dark:text-slate-500 py-8">Loading…</div>;
 
   return (
     <form onSubmit={handleSave} className="space-y-6 max-w-xl">
@@ -86,9 +86,9 @@ export default function LlmSettingsPage() {
       {success && <Alert type="success" message="LLM configuration saved." />}
 
       {/* Provider cards */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-900 mb-0.5">Provider</h3>
-        <p className="text-xs text-gray-500 mb-4">The AI service that powers your agent's responses.</p>
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Provider</h3>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">The AI service that powers your agent's responses.</p>
         <div className="space-y-3">
           {PROVIDERS.map((p) => {
             const active = provider === p.value;
@@ -101,15 +101,15 @@ export default function LlmSettingsPage() {
                   setModel(DEFAULT_MODELS[p.value] ?? '');
                 }}
                 className={`w-full flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                  active ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'
+                  active ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-700' : 'border-gray-200 hover:border-gray-300 dark:border-slate-700 dark:hover:border-slate-600 dark:bg-slate-900/60'
                 }`}
               >
                 <div className="flex-1">
-                  <p className={`text-sm font-medium ${active ? 'text-brand-700' : 'text-gray-900'}`}>{p.label}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{p.description}</p>
+                  <p className={`text-sm font-medium ${active ? 'text-brand-700 dark:text-brand-200' : 'text-gray-900 dark:text-slate-100'}`}>{p.label}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{p.description}</p>
                 </div>
                 <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 ${
-                  active ? 'bg-brand-500 border-brand-500' : 'border-gray-300'
+                  active ? 'bg-brand-500 border-brand-500' : 'border-gray-300 dark:border-slate-600'
                 }`}>
                   {active && <span className="text-white text-xs">✓</span>}
                 </div>
@@ -120,9 +120,9 @@ export default function LlmSettingsPage() {
       </div>
 
       {/* Model name */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-900 mb-0.5">Model</h3>
-        <p className="text-xs text-gray-500 mb-3">
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Model</h3>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
           {provider === 'ollama'
             ? 'Any model tag pulled in Ollama (e.g. llama3.1:8b, mistral, gemma3:4b).'
             : provider === 'openai'
@@ -141,9 +141,9 @@ export default function LlmSettingsPage() {
 
       {/* Ollama base URL */}
       {provider === 'ollama' && (
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-900 mb-0.5">Ollama base URL</h3>
-          <p className="text-xs text-gray-500 mb-3">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Ollama base URL</h3>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
             Leave blank to use the server's default Ollama instance.
           </p>
           <input
@@ -158,9 +158,9 @@ export default function LlmSettingsPage() {
 
       {/* API key */}
       {(provider === 'openai' || provider === 'anthropic') && (
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-900 mb-0.5">API key</h3>
-          <p className="text-xs text-gray-500 mb-3">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">API key</h3>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
             {hasKey
               ? '✓ A key is stored. Enter a new one to replace it.'
               : 'Required for this provider. Stored encrypted and never shown again.'}
@@ -192,7 +192,7 @@ export default function LlmSettingsPage() {
 function Alert({ type, message }: { type: 'error' | 'success'; message: string }) {
   return (
     <div className={`rounded-lg border px-4 py-3 text-sm ${
-      type === 'error' ? 'bg-red-50 border-red-200 text-red-600' : 'bg-green-50 border-green-200 text-green-700'
+      type === 'error' ? 'bg-red-50 border-red-200 text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300' : 'bg-green-50 border-green-200 text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300'
     }`}>{message}</div>
   );
 }

@@ -21,12 +21,6 @@ export const businesses = pgTable('businesses', {
    * Stored as JSON array string for simplicity; parsed at runtime.
    */
   allowedDomains: text('allowed_domains').notNull().default('[]'),
-  /**
-   * JSON-encoded array of enabled skill names.
-   * e.g. '["calculator","datetime","firecrawl"]'
-   * Defaults to calculator + datetime; firecrawl requires explicit opt-in.
-   */
-  enabledSkills: text('enabled_skills').notNull().default('["calculator","datetime"]'),
   // ── LLM configuration (per-business overrides) ─────────────────────────
   /** LLM provider: 'ollama' | 'openai' | 'anthropic'. Falls back to server env. */
   llmProvider: text('llm_provider').notNull().default('ollama'),
@@ -49,6 +43,8 @@ export const businesses = pgTable('businesses', {
   widgetTheme: text('widget_theme').notNull().default('light'),
   /** Show agent avatar in the chat window */
   showAvatar: boolean('show_avatar').notNull().default(true),
+  /** Business-scoped API key for external chat integrations. */
+  agentApiKey: text('agent_api_key').unique(),
   // ── Billing ──────────────────────────────────────────────────────────────
   /**
    * When the 7-day free trial expires.

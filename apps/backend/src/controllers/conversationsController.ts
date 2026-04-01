@@ -2,18 +2,12 @@ import { Request, Response } from 'express';
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { conversations, messages } from '@gcfis/db/schema';
-import { requireSupabaseAuth } from '../middleware/auth';
-import { getBusinessByOwner } from '../lib/business';
+import { requireBusinessAuth } from '../middleware/auth';
 
 export class ConversationsController {
   public readonly list = async (req: Request, res: Response) => {
-    const auth = await requireSupabaseAuth(req, res);
+    const auth = await requireBusinessAuth(req, res, 'member');
     if (!auth) return;
-
-    const business = await getBusinessByOwner(auth.userId);
-    if (!business) {
-      return res.status(404).json({ ok: false, error: 'No business found. Complete onboarding first.' });
-    }
 
     const limitParam = Number(req.query['limit'] ?? '25');
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 25;
@@ -27,7 +21,7 @@ export class ConversationsController {
         updatedAt: conversations.updatedAt,
       })
       .from(conversations)
-      .where(eq(conversations.businessId, business.id))
+      .where(eq(conversations.businessId, auth.businessId))
       .orderBy(desc(conversations.updatedAt))
       .limit(limit);
 
@@ -77,13 +71,8 @@ export class ConversationsController {
   };
 
   public readonly getById = async (req: Request, res: Response) => {
-    const auth = await requireSupabaseAuth(req, res);
+    const auth = await requireBusinessAuth(req, res, 'member');
     if (!auth) return;
-
-    const business = await getBusinessByOwner(auth.userId);
-    if (!business) {
-      return res.status(404).json({ ok: false, error: 'Business not found' });
-    }
 
     const id = req.params['id'];
     if (!id) {
@@ -103,7 +92,7 @@ export class ConversationsController {
       .where(eq(conversations.id, id))
       .limit(1);
 
-    if (!conversation || conversation.businessId !== business.id) {
+    if (!conversation || conversation.businessId !== auth.businessId) {
       return res.status(404).json({ ok: false, error: 'Conversation not found' });
     }
 

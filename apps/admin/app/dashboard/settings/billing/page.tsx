@@ -14,7 +14,7 @@ import { createClient } from '@supabase/supabase-js';
 function getSupabase() {
   return createClient(
     process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '',
-    process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? ''
+    process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY'] ?? ''
   );
 }
 
@@ -43,10 +43,10 @@ const STATUS_LABELS: Record<BillingStatus['status'], string> = {
 };
 
 const STATUS_COLORS: Record<BillingStatus['status'], string> = {
-  trialing: 'bg-blue-100 text-blue-700',
-  active: 'bg-green-100 text-green-700',
-  past_due: 'bg-amber-100 text-amber-700',
-  canceled: 'bg-red-100 text-red-700',
+  trialing: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+  active: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+  past_due: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+  canceled: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300',
 };
 
 export default function BillingPage() {
@@ -120,12 +120,12 @@ export default function BillingPage() {
   }
 
   if (loading) {
-    return <div className="text-sm text-gray-400 py-8">Loading billing information…</div>;
+    return <div className="text-sm text-gray-400 dark:text-slate-500 py-8">Loading billing information…</div>;
   }
 
   if (!billing) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
         {error || 'Unable to load billing information.'}
       </div>
     );
@@ -140,20 +140,20 @@ export default function BillingPage() {
   return (
     <div className="space-y-6 max-w-xl">
       {flashMessage && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300">
           {flashMessage}
         </div>
       )}
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
           {error}
         </div>
       )}
 
       {/* Status card */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-5">
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Subscription</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Subscription</h2>
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[billing.status]}`}
           >
@@ -163,13 +163,13 @@ export default function BillingPage() {
 
         {/* Trial info */}
         {billing.isTrialing && !billing.trialExpired && (
-          <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
-            <p className="text-sm font-medium text-blue-800">
+          <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 dark:bg-blue-950/30 dark:border-blue-900/50">
+            <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
               {billing.trialDaysRemaining === 0
                 ? 'Your trial expires today.'
                 : `${billing.trialDaysRemaining} day${billing.trialDaysRemaining !== 1 ? 's' : ''} remaining in your free trial.`}
             </p>
-            <p className="mt-1 text-xs text-blue-600">
+            <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
               Trial ends on{' '}
               {new Date(billing.trialEndsAt).toLocaleDateString(undefined, {
                 month: 'long',
@@ -183,9 +183,9 @@ export default function BillingPage() {
 
         {/* Expired trial warning */}
         {billing.trialExpired && (
-          <div className="rounded-xl bg-red-50 border border-red-100 p-4">
-            <p className="text-sm font-medium text-red-800">Your free trial has ended.</p>
-            <p className="mt-1 text-xs text-red-600">
+          <div className="rounded-xl bg-red-50 border border-red-100 p-4 dark:bg-red-950/30 dark:border-red-900/50">
+            <p className="text-sm font-medium text-red-800 dark:text-red-300">Your free trial has ended.</p>
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
               Chat messages are blocked until you subscribe. Subscribe below to restore access.
             </p>
           </div>
@@ -193,9 +193,9 @@ export default function BillingPage() {
 
         {/* Past due warning */}
         {billing.status === 'past_due' && (
-          <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
-            <p className="text-sm font-medium text-amber-800">Payment failed.</p>
-            <p className="mt-1 text-xs text-amber-600">
+          <div className="rounded-xl bg-amber-50 border border-amber-100 p-4 dark:bg-amber-950/30 dark:border-amber-900/50">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Payment failed.</p>
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
               Your last invoice could not be collected. Update your payment method to avoid service
               interruption.
             </p>
@@ -205,8 +205,8 @@ export default function BillingPage() {
         {/* Next billing date */}
         {billing.currentPeriodEnd && (
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-500">Next billing date</span>
-            <span className="font-medium text-gray-900">
+            <span className="text-gray-500 dark:text-slate-400">Next billing date</span>
+            <span className="font-medium text-gray-900 dark:text-slate-100">
               {new Date(billing.currentPeriodEnd).toLocaleDateString(undefined, {
                 month: 'long',
                 day: 'numeric',
@@ -218,23 +218,23 @@ export default function BillingPage() {
       </div>
 
       {/* Usage card */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-3">
-        <h2 className="text-base font-semibold text-gray-900">Usage</h2>
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-3 dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Usage</h2>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-500">Total AI messages processed</span>
-          <span className="text-2xl font-bold text-gray-900">
+          <span className="text-gray-500 dark:text-slate-400">Total AI messages processed</span>
+          <span className="text-2xl font-bold text-gray-900 dark:text-slate-100">
             {billing.messagesUsedTotal.toLocaleString()}
           </span>
         </div>
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-400 dark:text-slate-500">
           You are billed per message on the pay-as-you-go plan.
         </p>
       </div>
 
       {/* Pricing info */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-3">
-        <h2 className="text-base font-semibold text-gray-900">Pay-as-you-go pricing</h2>
-        <ul className="space-y-2 text-sm text-gray-600">
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-3 dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Pay-as-you-go pricing</h2>
+        <ul className="space-y-2 text-sm text-gray-600 dark:text-slate-300">
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
             <span>7-day free trial — no credit card required to start</span>
@@ -269,7 +269,7 @@ export default function BillingPage() {
         <button
           onClick={handleManageBilling}
           disabled={actionLoading}
-          className="w-full rounded-xl border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60 transition-colors"
+          className="w-full rounded-xl border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60 transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
         >
           {actionLoading ? 'Opening portal…' : 'Manage billing & invoices'}
         </button>

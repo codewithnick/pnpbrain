@@ -1,8 +1,30 @@
 'use client';
 
-import Link from 'next/link';
+import NextLink from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import AnalyticsRoundedIcon from '@mui/icons-material/AnalyticsRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
+import TravelExploreRoundedIcon from '@mui/icons-material/TravelExploreRounded';
+import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
+import {
+  Avatar,
+  Box,
+  Button,
+  Drawer,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Paper,
+  Stack,
+  Typography,
+} from '@mui/material';
 import {
   fetchBackend,
   getSupabaseBrowserClient,
@@ -10,11 +32,13 @@ import {
 } from '@/lib/supabase';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: '📄' },
-  { href: '/dashboard/firecrawl', label: 'Firecrawl', icon: '🕷️' },
-  { href: '/dashboard/conversations', label: 'Conversations', icon: '💬' },
-  { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
+  { href: '/dashboard', label: 'Dashboard', icon: <AnalyticsRoundedIcon fontSize="small" /> },
+  { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: <DescriptionRoundedIcon fontSize="small" /> },
+  { href: '/dashboard/firecrawl', label: 'Firecrawl', icon: <TravelExploreRoundedIcon fontSize="small" /> },
+  { href: '/dashboard/skills', label: 'Skills', icon: <PsychologyRoundedIcon fontSize="small" /> },
+  { href: '/dashboard/conversations', label: 'Conversations', icon: <ChatRoundedIcon fontSize="small" /> },
+  { href: '/dashboard/team', label: 'Team', icon: <PeopleRoundedIcon fontSize="small" /> },
+  { href: '/dashboard/settings', label: 'Settings', icon: <SettingsRoundedIcon fontSize="small" /> },
 ];
 
 export default function Sidebar() {
@@ -22,6 +46,14 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [slug, setSlug] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem('admin-theme');
+    const nextTheme = savedTheme === 'light' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -46,70 +78,119 @@ export default function Sidebar() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  function toggleTheme() {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    window.localStorage.setItem('admin-theme', nextTheme);
+    document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+  }
+
   return (
-    <aside className="w-60 bg-white border-r border-gray-200 flex flex-col">
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-6 py-5 border-b border-gray-100">
-        <div className="h-7 w-7 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-sm">
-          G
-        </div>
-        <span className="font-semibold text-gray-900">GCFIS Admin</span>
-      </div>
+    <Drawer
+      variant="permanent"
+      sx={{
+        width: 280,
+        flexShrink: 0,
+        '& .MuiDrawer-paper': {
+          width: 280,
+          boxSizing: 'border-box',
+          borderRight: '1px solid rgba(148, 163, 184, 0.14)',
+          backgroundColor: '#020617',
+        },
+      }}
+    >
+      <Stack sx={{ height: '100%', p: 2, gap: 2 }}>
+        <Paper sx={{ p: 2, borderRadius: 3, background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(16, 185, 129, 0.18))' }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Avatar sx={{ bgcolor: 'primary.main', color: '#082f49', fontWeight: 800 }}>G</Avatar>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                GCFIS Admin
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Business workspace
+              </Typography>
+            </Box>
+          </Stack>
+        </Paper>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {navItems.map((item) => {
-          const active =
-            item.href === '/dashboard'
-              ? pathname === '/dashboard'
-              : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                active
-                  ? 'bg-brand-50 text-brand-600'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <span>{item.icon}</span>
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+        <List sx={{ p: 0, display: 'grid', gap: 0.75 }}>
+          {navItems.map((item) => {
+            const active =
+              item.href === '/dashboard'
+                ? pathname === '/dashboard'
+                : pathname.startsWith(item.href);
+            return (
+              <ListItemButton
+                key={item.href}
+                component={NextLink}
+                href={item.href}
+                selected={active}
+                sx={{
+                  borderRadius: 2,
+                  '&.Mui-selected': {
+                    bgcolor: 'rgba(14, 165, 233, 0.18)',
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 34, color: active ? 'primary.main' : 'text.secondary' }}>
+                  {item.icon}
+                </ListItemIcon>
+                <ListItemText
+                  primary={item.label}
+                  primaryTypographyProps={{
+                    fontSize: 14,
+                    fontWeight: active ? 700 : 500,
+                  }}
+                />
+              </ListItemButton>
+            );
+          })}
+        </List>
 
-      {/* Footer */}
-      <div className="px-4 py-4 border-t border-gray-100 space-y-3">
-        {/* Public chat URL pill */}
+        <Box sx={{ mt: 'auto' }}>
         {slug && (
-          <button
-            type="button"
-            onClick={copyUrl}
-            title="Click to copy your public chat URL"
-            className="w-full flex items-center gap-2 rounded-lg bg-brand-50 border border-brand-100 px-3 py-2 text-left group hover:bg-brand-100 transition"
-          >
-            <span className="text-base">🔗</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">Your chat page</p>
-              <p className="text-xs text-brand-700 font-mono truncate">/{slug}</p>
-            </div>
-            <span className="text-[10px] text-brand-500 shrink-0">{copied ? '✓' : 'copy'}</span>
-          </button>
+          <Paper sx={{ p: 1.5, borderRadius: 2, mb: 1.5, bgcolor: 'rgba(14, 165, 233, 0.12)' }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              Public chat route
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 700, color: 'primary.light' }}>
+              /{slug}
+            </Typography>
+            <Button onClick={copyUrl} size="small" sx={{ mt: 1 }} variant="contained" fullWidth>
+              {copied ? 'Copied' : 'Copy URL'}
+            </Button>
+          </Paper>
         )}
 
-        {/* Sign out */}
-        <button
-          type="button"
-          onClick={signOut}
-          className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition text-left"
-        >
-          <span>🚪</span> Sign out
-        </button>
+          <Button
+            type="button"
+            onClick={toggleTheme}
+            fullWidth
+            variant="outlined"
+            startIcon={<AutoAwesomeRoundedIcon fontSize="small" />}
+            sx={{ mb: 1 }}
+          >
+            Theme: {theme === 'dark' ? 'Dark' : 'Light'}
+          </Button>
 
-        <p className="text-[10px] text-gray-300 text-center">GCFIS v0.1.0</p>
-      </div>
-    </aside>
+          <Button
+            type="button"
+            onClick={signOut}
+            fullWidth
+            color="inherit"
+            variant="text"
+            startIcon={<LogoutRoundedIcon fontSize="small" />}
+            sx={{ justifyContent: 'flex-start' }}
+          >
+            Sign out
+          </Button>
+
+          <Typography variant="caption" sx={{ display: 'block', mt: 1.5, textAlign: 'center', color: 'text.disabled' }}>
+            GCFIS v0.1.0
+          </Typography>
+        </Box>
+      </Stack>
+    </Drawer>
   );
 }

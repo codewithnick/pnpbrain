@@ -9,7 +9,6 @@ import PublicChat from '@/components/PublicChat';
  */
 
 interface BusinessConfig {
-  id:             string;
   name:           string;
   slug:           string;
   botName:        string;
@@ -18,6 +17,7 @@ interface BusinessConfig {
   widgetPosition: string;
   widgetTheme:    string;
   showAvatar:     boolean;
+  publicChatToken: string;
 }
 
 async function fetchConfig(slug: string): Promise<BusinessConfig | null> {

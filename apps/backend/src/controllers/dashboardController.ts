@@ -2,25 +2,19 @@ import { Request, Response } from 'express';
 import { count, eq } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { conversations, firecrawlJobs, knowledgeDocuments, memoryFacts } from '@gcfis/db/schema';
-import { requireSupabaseAuth } from '../middleware/auth';
-import { getBusinessByOwner } from '../lib/business';
+import { requireBusinessAuth } from '../middleware/auth';
 
 export class DashboardController {
   public readonly getStats = async (req: Request, res: Response) => {
-    const auth = await requireSupabaseAuth(req, res);
+    const auth = await requireBusinessAuth(req, res, 'viewer');
     if (!auth) return;
-
-    const business = await getBusinessByOwner(auth.userId);
-    if (!business) {
-      return res.status(404).json({ ok: false, error: 'No business found. Complete onboarding first.' });
-    }
 
     const db = getDb();
     const [conversationCount, knowledgeCount, memoryCount, crawlCount] = await Promise.all([
-      db.select({ value: count() }).from(conversations).where(eq(conversations.businessId, business.id)),
-      db.select({ value: count() }).from(knowledgeDocuments).where(eq(knowledgeDocuments.businessId, business.id)),
-      db.select({ value: count() }).from(memoryFacts).where(eq(memoryFacts.businessId, business.id)),
-      db.select({ value: count() }).from(firecrawlJobs).where(eq(firecrawlJobs.businessId, business.id)),
+      db.select({ value: count() }).from(conversations).where(eq(conversations.businessId, auth.businessId)),
+      db.select({ value: count() }).from(knowledgeDocuments).where(eq(knowledgeDocuments.businessId, auth.businessId)),
+      db.select({ value: count() }).from(memoryFacts).where(eq(memoryFacts.businessId, auth.businessId)),
+      db.select({ value: count() }).from(firecrawlJobs).where(eq(firecrawlJobs.businessId, auth.businessId)),
     ]);
 
     return res.json({

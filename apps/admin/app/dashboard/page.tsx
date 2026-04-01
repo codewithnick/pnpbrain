@@ -2,14 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
+import MemoryRoundedIcon from '@mui/icons-material/MemoryRounded';
+import TravelExploreRoundedIcon from '@mui/icons-material/TravelExploreRounded';
+import {
+  Alert,
+  Box,
+  Card,
+  CardContent,
+  Chip,
+  Grid,
+  Paper,
+  Stack,
+  Typography,
+} from '@mui/material';
 import type { DashboardStats } from '@/lib/api-types';
 import { fetchBackend } from '@/lib/supabase';
 
 const statCards = [
-  { label: 'Total Conversations', key: 'conversations', icon: '💬' },
-  { label: 'Knowledge Documents', key: 'knowledgeDocuments', icon: '📄' },
-  { label: 'Memory Facts', key: 'memoryFacts', icon: '🧠' },
-  { label: 'Crawl Jobs', key: 'crawlJobs', icon: '🕷️' },
+  { label: 'Total Conversations', key: 'conversations', icon: <InsightsRoundedIcon fontSize="small" /> },
+  { label: 'Knowledge Documents', key: 'knowledgeDocuments', icon: <LayersRoundedIcon fontSize="small" /> },
+  { label: 'Memory Facts', key: 'memoryFacts', icon: <MemoryRoundedIcon fontSize="small" /> },
+  { label: 'Crawl Jobs', key: 'crawlJobs', icon: <TravelExploreRoundedIcon fontSize="small" /> },
 ] as const;
 
 export default function DashboardPage() {
@@ -29,58 +44,108 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Dashboard</h1>
-      <p className="text-gray-500 mb-8">Track adoption, refresh knowledge, and review recent conversations.</p>
+    <Box sx={{ p: { xs: 2, md: 4 } }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2} sx={{ mb: 3 }}>
+        <Box>
+          <Typography variant="h4" sx={{ mb: 0.5 }}>
+            Dashboard
+          </Typography>
+          <Typography color="text.secondary">
+            Track adoption, refresh knowledge, and review recent conversations.
+          </Typography>
+        </Box>
+        <Chip color="primary" variant="outlined" label="AI Ops Overview" />
+      </Stack>
 
       {error && (
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+        <Alert severity="error" sx={{ mb: 3 }}>
           {error}
-        </div>
+        </Alert>
       )}
 
-      {/* Stat cards */}
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <Grid container spacing={2.5}>
         {statCards.map((stat) => (
-          <div
+          <Grid
             key={stat.label}
-            className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
+            size={{ xs: 12, sm: 6, lg: 3 }}
           >
-            <div className="text-2xl mb-3">{stat.icon}</div>
-            <p className="text-3xl font-bold text-gray-900">{stats ? stats[stat.key] : '–'}</p>
-            <p className="mt-1 text-sm text-gray-500">{stat.label}</p>
-          </div>
+            <Card sx={{ height: '100%', borderRadius: 3, background: 'linear-gradient(145deg, rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.95))' }}>
+              <CardContent>
+                <Stack spacing={1.25}>
+                  <Box sx={{ color: 'primary.main' }}>{stat.icon}</Box>
+                  <Typography variant="h4" sx={{ lineHeight: 1.1 }}>
+                    {stats ? stats[stat.key] : '–'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {stat.label}
+                  </Typography>
+                </Stack>
+              </CardContent>
+            </Card>
+          </Grid>
         ))}
-      </div>
+      </Grid>
 
-      <div className="mt-12 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Operational status</h2>
-          <p className="mt-2 text-sm text-gray-500">
+      <Grid container spacing={2.5} sx={{ mt: 1 }}>
+        <Grid size={{ xs: 12, lg: 8 }}>
+          <Paper sx={{ p: 3, borderRadius: 3, height: '100%' }}>
+            <Typography variant="h6">Operational status</Typography>
+            <Typography sx={{ mt: 1, color: 'text.secondary', fontSize: 14 }}>
             Your backend is ready to serve live conversations. The next step is populating the knowledge base and embedding the widget.
-          </p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <Link href="/dashboard/knowledge" className="rounded-xl border border-gray-200 px-4 py-4 hover:border-brand-300 hover:bg-brand-50 transition">
-              <p className="text-sm font-semibold text-gray-900">Add knowledge</p>
-              <p className="mt-1 text-xs text-gray-500">Upload core FAQs, policies, and product info.</p>
-            </Link>
-            <Link href="/dashboard/firecrawl" className="rounded-xl border border-gray-200 px-4 py-4 hover:border-brand-300 hover:bg-brand-50 transition">
-              <p className="text-sm font-semibold text-gray-900">Run Firecrawl</p>
-              <p className="mt-1 text-xs text-gray-500">Refresh documentation or pricing pages from approved domains.</p>
-            </Link>
-          </div>
-        </div>
+            </Typography>
+            <Grid container spacing={1.5} sx={{ mt: 1.5 }}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Paper
+                  component={Link}
+                  href="/dashboard/knowledge"
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    textDecoration: 'none',
+                    bgcolor: 'rgba(14, 165, 233, 0.08)',
+                    '&:hover': { bgcolor: 'rgba(14, 165, 233, 0.14)' },
+                  }}
+                >
+                  <Typography variant="subtitle2">Add knowledge</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Upload core FAQs, policies, and product info.
+                  </Typography>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Paper
+                  component={Link}
+                  href="/dashboard/firecrawl"
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    textDecoration: 'none',
+                    bgcolor: 'rgba(34, 197, 94, 0.08)',
+                    '&:hover': { bgcolor: 'rgba(34, 197, 94, 0.14)' },
+                  }}
+                >
+                  <Typography variant="subtitle2">Run Firecrawl</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Refresh docs or pricing pages from approved domains.
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Paper>
+        </Grid>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">MVP checklist</h2>
-          <div className="mt-4 space-y-3 text-sm text-gray-600">
-            <p>1. Complete onboarding and confirm your model settings.</p>
-            <p>2. Add at least one knowledge document or approved crawl URL.</p>
-            <p>3. Embed the widget on your site or install the WordPress plugin.</p>
-            <p>4. Review live conversations and refine answers from the dashboard.</p>
-          </div>
-        </div>
-      </div>
-    </div>
+        <Grid size={{ xs: 12, lg: 4 }}>
+          <Paper sx={{ p: 3, borderRadius: 3, height: '100%' }}>
+            <Typography variant="h6">MVP checklist</Typography>
+            <Stack spacing={1.2} sx={{ mt: 2, color: 'text.secondary', fontSize: 14 }}>
+              <Typography>1. Complete onboarding and confirm model settings.</Typography>
+              <Typography>2. Add at least one document or approved crawl URL.</Typography>
+              <Typography>3. Embed the widget or install the WordPress plugin.</Typography>
+              <Typography>4. Review conversations and refine answers weekly.</Typography>
+            </Stack>
+          </Paper>
+        </Grid>
+      </Grid>
+    </Box>
   );
 }

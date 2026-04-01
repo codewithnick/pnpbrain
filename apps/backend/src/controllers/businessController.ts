@@ -1,15 +1,44 @@
 import { Request, Response } from 'express';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
+import type { Business } from '@gcfis/db';
 import { getDb } from '@gcfis/db/client';
 import { businesses } from '@gcfis/db/schema';
 import { eq } from 'drizzle-orm';
-import { requireSupabaseAuth } from '../middleware/auth';
-import { getBusinessByOwner, normalizeAllowedDomains, updateBusiness } from '../lib/business';
+import { requireBusinessAuth } from '../middleware/auth';
+import {
+  ensureBusinessApiKey,
+  generateBusinessApiKey,
+  generatePublicChatToken,
+  getBusinessById,
+  normalizeAllowedDomains,
+  parseAllowedDomains,
+  updateBusiness,
+} from '../lib/business';
+import {
+  getEnabledSkillsForBusiness,
+  getMeetingIntegrationForBusiness,
+  setEnabledSkillsForBusiness,
+  updateMeetingIntegrationForBusiness,
+} from '../lib/businessSkills';
 
 const LLM_PROVIDERS = ['ollama', 'openai', 'anthropic'] as const;
-const SKILL_NAMES = ['calculator', 'datetime', 'firecrawl'] as const;
+const SKILL_NAMES = ['calculator', 'datetime', 'firecrawl', 'lead_qualification', 'meeting_scheduler'] as const;
 const POSITIONS = ['bottom-right', 'bottom-left'] as const;
 const THEMES = ['light', 'dark'] as const;
+const MEETING_PROVIDERS = ['none', 'google', 'zoom', 'calendly'] as const;
+const OAUTH_PROVIDERS = ['google', 'zoom'] as const;
+const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
+
+type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
+
+interface OAuthStatePayload {
+  provider: OAuthProvider;
+  businessId: string;
+  returnTo?: string;
+  iat: number;
+  nonce: string;
+}
 
 const updateSchema = z.object({
   name: z.string().min(2).max(80).optional(),
@@ -20,6 +49,14 @@ const updateSchema = z.object({
   llmApiKey: z.string().max(200).optional().nullable(),
   llmBaseUrl: z.string().url().optional().nullable(),
   enabledSkills: z.array(z.enum(SKILL_NAMES)).optional(),
+  meetingIntegration: z
+    .object({
+      provider: z.enum(MEETING_PROVIDERS),
+      timezone: z.string().max(60).optional(),
+      calendarId: z.string().max(160).optional(),
+      calendlySchedulingUrl: z.string().url().max(400).optional(),
+    })
+    .optional(),
   allowedDomains: z.array(z.string().min(1)).max(50).optional(),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{3,6}$/).optional(),
   botName: z.string().min(1).max(60).optional(),
@@ -29,29 +66,75 @@ const updateSchema = z.object({
   showAvatar: z.boolean().optional(),
 });
 
+const connectSchema = z.object({
+  returnTo: z.string().url().optional(),
+});
+
+async function toSafeBusinessResponse(business: Business) {
+  const [enabledSkills, meetingIntegration] = await Promise.all([
+    getEnabledSkillsForBusiness(business.id),
+    getMeetingIntegrationForBusiness(business.id),
+  ]);
+
+  return {
+    id: business.id,
+    name: business.name,
+    slug: business.slug,
+    description: business.description,
+    ownerUserId: business.ownerUserId,
+    allowedDomains: parseAllowedDomains(business.allowedDomains),
+    enabledSkills,
+    meetingIntegration: {
+      provider: meetingIntegration.provider,
+      ...(meetingIntegration.timezone ? { timezone: meetingIntegration.timezone } : {}),
+      ...(meetingIntegration.calendarId ? { calendarId: meetingIntegration.calendarId } : {}),
+      ...(meetingIntegration.calendlySchedulingUrl
+        ? { calendlySchedulingUrl: meetingIntegration.calendlySchedulingUrl }
+        : {}),
+      hasGoogleAccessToken: !!meetingIntegration.googleAccessToken,
+      hasZoomAccessToken: !!meetingIntegration.zoomAccessToken,
+      hasGoogleRefreshToken: !!meetingIntegration.googleRefreshToken,
+      hasZoomRefreshToken: !!meetingIntegration.zoomRefreshToken,
+    },
+    llmProvider: business.llmProvider,
+    llmModel: business.llmModel,
+    llmBaseUrl: business.llmBaseUrl,
+    primaryColor: business.primaryColor,
+    botName: business.botName,
+    welcomeMessage: business.welcomeMessage,
+    widgetPosition: business.widgetPosition,
+    widgetTheme: business.widgetTheme,
+    showAvatar: business.showAvatar,
+    trialEndsAt: business.trialEndsAt,
+    subscriptionStatus: business.subscriptionStatus,
+    stripeCustomerId: business.stripeCustomerId,
+    stripeSubscriptionId: business.stripeSubscriptionId,
+    currentPeriodEnd: business.currentPeriodEnd,
+    messagesUsedTotal: business.messagesUsedTotal,
+    createdAt: business.createdAt,
+    updatedAt: business.updatedAt,
+    agentApiKey: business.agentApiKey,
+    publicChatToken: generatePublicChatToken(business),
+  };
+}
+
 export class BusinessController {
   public readonly getMe = async (req: Request, res: Response) => {
-    const auth = await requireSupabaseAuth(req, res);
+    const auth = await requireBusinessAuth(req, res);
     if (!auth) return;
 
-    const business = await getBusinessByOwner(auth.userId);
-    if (!business) {
-      return res.status(404).json({ ok: false, error: 'No business found. Complete onboarding first.' });
-    }
-
-    const { llmApiKey: _ignored, ...safe } = business;
-    return res.json({ ok: true, data: safe });
+    const business = await getBusinessById(auth.businessId);
+    if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
+    const withApiKey = await ensureBusinessApiKey(business);
+    return res.json({ ok: true, data: await toSafeBusinessResponse(withApiKey) });
   };
 
   public readonly updateMe = async (req: Request, res: Response) => {
-    const auth = await requireSupabaseAuth(req, res);
+    const auth = await requireBusinessAuth(req, res, 'admin');
     if (!auth) return;
 
-    const business = await getBusinessByOwner(auth.userId);
-    if (!business) {
-      return res.status(404).json({ ok: false, error: 'No business found. Complete onboarding first.' });
-    }
-
+    const business = await getBusinessById(auth.businessId);
+    if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ ok: false, error: parsed.error.issues.map((i) => i.message).join(', ') });
@@ -76,16 +159,362 @@ export class BusinessController {
       updates['allowedDomains'] = JSON.stringify(normalizeAllowedDomains(parsed.data.allowedDomains));
     }
 
-    if (parsed.data.enabledSkills) {
-      updates['enabledSkills'] = JSON.stringify(parsed.data.enabledSkills);
-    }
-
     const updated = await updateBusiness(business.id, updates);
     if (!updated) {
       return res.status(500).json({ ok: false, error: 'Failed to update business' });
     }
 
-    const { llmApiKey: _ignored, ...safe } = updated;
-    return res.json({ ok: true, data: safe });
+    if (parsed.data.enabledSkills) {
+      await setEnabledSkillsForBusiness(business.id, parsed.data.enabledSkills);
+    }
+
+    if (parsed.data.meetingIntegration) {
+      await updateMeetingIntegrationForBusiness(business.id, {
+        provider: parsed.data.meetingIntegration.provider,
+        ...(parsed.data.meetingIntegration.timezone !== undefined
+          ? { timezone: parsed.data.meetingIntegration.timezone }
+          : {}),
+        ...(parsed.data.meetingIntegration.calendarId !== undefined
+          ? { calendarId: parsed.data.meetingIntegration.calendarId }
+          : {}),
+        ...(parsed.data.meetingIntegration.calendlySchedulingUrl !== undefined
+          ? { calendlySchedulingUrl: parsed.data.meetingIntegration.calendlySchedulingUrl }
+          : {}),
+      });
+    }
+
+    const withApiKey = await ensureBusinessApiKey(updated);
+    return res.json({ ok: true, data: await toSafeBusinessResponse(withApiKey) });
   };
+
+  public readonly rotateApiKey = async (req: Request, res: Response) => {
+    const auth = await requireBusinessAuth(req, res, 'owner');
+    if (!auth) return;
+
+    const business = await getBusinessById(auth.businessId);
+    if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
+    const updated = await updateBusiness(business.id, { agentApiKey: generateBusinessApiKey() });
+    if (!updated?.agentApiKey) {
+      return res.status(500).json({ ok: false, error: 'Failed to rotate API key' });
+    }
+
+    return res.json({
+      ok: true,
+      data: {
+        agentApiKey: updated.agentApiKey,
+        businessId: updated.id,
+      },
+    });
+  };
+
+  public readonly getGoogleConnectUrl = async (req: Request, res: Response) => {
+    const auth = await requireBusinessAuth(req, res, 'admin');
+    if (!auth) return;
+
+    const parsed = connectSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.issues.map((i) => i.message).join(', ') });
+    }
+
+    const clientId = process.env['GOOGLE_OAUTH_CLIENT_ID'];
+    if (!clientId) {
+      return res.status(500).json({ ok: false, error: 'GOOGLE_OAUTH_CLIENT_ID is not configured' });
+    }
+
+    const returnTo = normalizeReturnTo(parsed.data.returnTo);
+    const state = signOAuthState({
+      provider: 'google',
+      businessId: auth.businessId,
+      ...(returnTo ? { returnTo } : {}),
+      iat: Date.now(),
+      nonce: randomBytes(16).toString('base64url'),
+    });
+
+    const redirectUri = `${getBackendPublicUrl()}/api/business/integrations/google/callback`;
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/calendar.events');
+    authUrl.searchParams.set('access_type', 'offline');
+    authUrl.searchParams.set('prompt', 'consent');
+    authUrl.searchParams.set('state', state);
+
+    return res.json({ ok: true, data: { authUrl: authUrl.toString() } });
+  };
+
+  public readonly getZoomConnectUrl = async (req: Request, res: Response) => {
+    const auth = await requireBusinessAuth(req, res, 'admin');
+    if (!auth) return;
+
+    const parsed = connectSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.issues.map((i) => i.message).join(', ') });
+    }
+
+    const clientId = process.env['ZOOM_OAUTH_CLIENT_ID'];
+    if (!clientId) {
+      return res.status(500).json({ ok: false, error: 'ZOOM_OAUTH_CLIENT_ID is not configured' });
+    }
+
+    const returnTo = normalizeReturnTo(parsed.data.returnTo);
+    const state = signOAuthState({
+      provider: 'zoom',
+      businessId: auth.businessId,
+      ...(returnTo ? { returnTo } : {}),
+      iat: Date.now(),
+      nonce: randomBytes(16).toString('base64url'),
+    });
+
+    const redirectUri = `${getBackendPublicUrl()}/api/business/integrations/zoom/callback`;
+    const authUrl = new URL('https://zoom.us/oauth/authorize');
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('state', state);
+
+    return res.json({ ok: true, data: { authUrl: authUrl.toString() } });
+  };
+
+  public readonly googleCallback = async (req: Request, res: Response) => {
+    const code = typeof req.query['code'] === 'string' ? req.query['code'] : '';
+    const stateToken = typeof req.query['state'] === 'string' ? req.query['state'] : '';
+    const error = typeof req.query['error'] === 'string' ? req.query['error'] : '';
+
+    const state = verifyOAuthState(stateToken, 'google');
+    if (!state) {
+      return res.status(400).send('Invalid OAuth state');
+    }
+
+    if (error) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'google_error'));
+    }
+
+    if (!code) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'google_missing_code'));
+    }
+
+    const clientId = process.env['GOOGLE_OAUTH_CLIENT_ID'];
+    const clientSecret = process.env['GOOGLE_OAUTH_CLIENT_SECRET'];
+    if (!clientId || !clientSecret) {
+      return res.status(500).send('Google OAuth env vars are not configured');
+    }
+
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: `${getBackendPublicUrl()}/api/business/integrations/google/callback`,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'google_token_error'));
+    }
+
+    const payload = (await tokenResponse.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+
+    if (!payload.access_token) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'google_token_missing'));
+    }
+
+    const business = await getBusinessById(state.businessId);
+    if (!business) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'google_business_missing'));
+    }
+
+    await updateMeetingIntegrationForBusiness(business.id, {
+      provider: 'google',
+      googleAccessToken: payload.access_token,
+      ...(payload.refresh_token ? { googleRefreshToken: payload.refresh_token } : {}),
+      ...(typeof payload.expires_in === 'number'
+        ? { googleAccessTokenExpiresAt: new Date(Date.now() + payload.expires_in * 1000).toISOString() }
+        : {}),
+    });
+
+    return res.redirect(withOAuthStatus(state.returnTo, 'google_connected'));
+  };
+
+  public readonly zoomCallback = async (req: Request, res: Response) => {
+    const code = typeof req.query['code'] === 'string' ? req.query['code'] : '';
+    const stateToken = typeof req.query['state'] === 'string' ? req.query['state'] : '';
+    const error = typeof req.query['error'] === 'string' ? req.query['error'] : '';
+
+    const state = verifyOAuthState(stateToken, 'zoom');
+    if (!state) {
+      return res.status(400).send('Invalid OAuth state');
+    }
+
+    if (error) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'zoom_error'));
+    }
+
+    if (!code) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'zoom_missing_code'));
+    }
+
+    const clientId = process.env['ZOOM_OAUTH_CLIENT_ID'];
+    const clientSecret = process.env['ZOOM_OAUTH_CLIENT_SECRET'];
+    if (!clientId || !clientSecret) {
+      return res.status(500).send('Zoom OAuth env vars are not configured');
+    }
+
+    const tokenUrl = new URL('https://zoom.us/oauth/token');
+    tokenUrl.searchParams.set('grant_type', 'authorization_code');
+    tokenUrl.searchParams.set('code', code);
+    tokenUrl.searchParams.set('redirect_uri', `${getBackendPublicUrl()}/api/business/integrations/zoom/callback`);
+
+    const tokenResponse = await fetch(tokenUrl.toString(), {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+      },
+    });
+
+    if (!tokenResponse.ok) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'zoom_token_error'));
+    }
+
+    const payload = (await tokenResponse.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+
+    if (!payload.access_token) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'zoom_token_missing'));
+    }
+
+    const business = await getBusinessById(state.businessId);
+    if (!business) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'zoom_business_missing'));
+    }
+
+    await updateMeetingIntegrationForBusiness(business.id, {
+      provider: 'zoom',
+      zoomAccessToken: payload.access_token,
+      ...(payload.refresh_token ? { zoomRefreshToken: payload.refresh_token } : {}),
+      ...(typeof payload.expires_in === 'number'
+        ? { zoomAccessTokenExpiresAt: new Date(Date.now() + payload.expires_in * 1000).toISOString() }
+        : {}),
+    });
+
+    return res.redirect(withOAuthStatus(state.returnTo, 'zoom_connected'));
+  };
+
+  public readonly disconnectMeetingProvider = async (req: Request, res: Response) => {
+    const auth = await requireBusinessAuth(req, res, 'admin');
+    if (!auth) return;
+
+    const provider = req.params['provider'];
+    if (!provider || !OAUTH_PROVIDERS.includes(provider as OAuthProvider)) {
+      return res.status(400).json({ ok: false, error: 'Unsupported provider' });
+    }
+
+    const business = await getBusinessById(auth.businessId);
+    if (!business) {
+      return res.status(404).json({ ok: false, error: 'Business not found' });
+    }
+
+    if (provider === 'google') {
+      await updateMeetingIntegrationForBusiness(business.id, {
+        provider: 'none',
+        googleAccessToken: '',
+        googleRefreshToken: '',
+      });
+    }
+
+    if (provider === 'zoom') {
+      await updateMeetingIntegrationForBusiness(business.id, {
+        provider: 'none',
+        zoomAccessToken: '',
+        zoomRefreshToken: '',
+      });
+    }
+
+    const refreshed = await getBusinessById(business.id);
+    if (!refreshed) {
+      return res.status(500).json({ ok: false, error: 'Failed to refresh business after disconnect' });
+    }
+
+    return res.json({ ok: true, data: await toSafeBusinessResponse(refreshed) });
+  };
+}
+
+function getBackendPublicUrl(): string {
+  return process.env['BACKEND_PUBLIC_URL'] ?? process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3001';
+}
+
+function normalizeReturnTo(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return url.toString();
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function withOAuthStatus(returnTo: string | undefined, status: string): string {
+  const fallback = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3000/dashboard/settings/skills';
+  const target = normalizeReturnTo(returnTo) ?? fallback;
+  const url = new URL(target);
+  url.searchParams.set('oauth', status);
+  return url.toString();
+}
+
+function getOAuthStateSecret(): string {
+  const secret =
+    process.env['OAUTH_STATE_SECRET']
+    ?? process.env['PUBLIC_CHAT_TOKEN_SECRET']
+    ?? process.env['SUPABASE_SERVICE_ROLE_KEY'];
+
+  if (!secret) {
+    throw new Error('OAUTH_STATE_SECRET or fallback secret must be configured');
+  }
+
+  return secret;
+}
+
+function signOAuthState(payload: OAuthStatePayload): string {
+  const secret = getOAuthStateSecret();
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  return `${encodedPayload}.${signature}`;
+}
+
+function verifyOAuthState(token: string, expectedProvider: OAuthProvider): OAuthStatePayload | null {
+  if (!token) return null;
+
+  const [encodedPayload, providedSignature] = token.split('.');
+  if (!encodedPayload || !providedSignature) return null;
+
+  const secret = getOAuthStateSecret();
+  const expectedSignature = createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  const providedBuffer = Buffer.from(providedSignature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+
+  if (providedBuffer.length !== expectedBuffer.length) return null;
+  if (!timingSafeEqual(providedBuffer, expectedBuffer)) return null;
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as OAuthStatePayload;
+    if (payload.provider !== expectedProvider) return null;
+    if (!payload.businessId || !payload.iat || !payload.nonce) return null;
+    if (Date.now() - payload.iat > OAUTH_STATE_MAX_AGE_MS) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }

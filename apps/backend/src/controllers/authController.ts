@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '@gcfis/db/client';
-import { businesses } from '@gcfis/db/schema';
+import { businesses, businessMembers } from '@gcfis/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireSupabaseAuth } from '../middleware/auth';
 import { createBusiness, getBusinessByOwner } from '../lib/business';
@@ -47,6 +47,13 @@ export class AuthController {
       slug: parsed.data.slug,
       ownerUserId: auth.userId,
     });
+
+    // Create the owner membership row for RBAC resolution
+    const db2 = getDb();
+    await db2
+      .insert(businessMembers)
+      .values({ businessId: business.id, userId: auth.userId, email: '', role: 'owner' })
+      .onConflictDoNothing();
 
     const { llmApiKey: _ignored, ...safe } = business;
     return res.status(201).json({ ok: true, data: safe });

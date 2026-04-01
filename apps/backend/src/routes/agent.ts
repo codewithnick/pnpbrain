@@ -10,7 +10,7 @@ const chatController = new ChatController();
  * Main chat endpoint — runs the LangGraph agent and streams SSE events.
  *
  * Request body (JSON):
- *   { message: string; threadId?: string; businessId: string }
+ *   { message: string; threadId?: string; publicToken?: string }
  *
  * Response:
  *   text/event-stream  →  series of StreamEvent JSON objects

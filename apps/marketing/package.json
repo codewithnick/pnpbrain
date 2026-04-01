@@ -12,6 +12,11 @@
     "clean": "rimraf .next"
   },
   "dependencies": {
+    "@gcfis/types": "workspace:*",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.3.9",
+    "@mui/material": "^7.3.9",
     "next": "^15.1.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

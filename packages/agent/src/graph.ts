@@ -28,7 +28,27 @@ import { LlmService, type LlmOptions } from './llm.js';
 import { buildSystemPrompt } from './prompts.js';
 import { RagService } from './rag.js';
 import { MemoryService } from './memory.js';
-import { createFirecrawlTool, calculatorTool, datetimeTool } from '@gcfis/tools';
+import {
+  createFirecrawlTool,
+  calculatorTool,
+  datetimeTool,
+  leadQualificationTool,
+  meetingSchedulerTool,
+  createMeetingBookingTool,
+} from '@gcfis/tools';
+
+interface MeetingIntegrationConfig {
+  provider: 'none' | 'google' | 'zoom' | 'calendly';
+  timezone?: string;
+  calendarId?: string;
+  googleAccessToken?: string;
+  googleRefreshToken?: string;
+  googleAccessTokenExpiresAt?: string;
+  zoomAccessToken?: string;
+  zoomRefreshToken?: string;
+  zoomAccessTokenExpiresAt?: string;
+  calendlySchedulingUrl?: string;
+}
 
 export interface GraphInput {
   businessId: string;
@@ -38,6 +58,7 @@ export interface GraphInput {
   allowedDomains: string[];
   userMessage: string;
   enabledSkills?: string[];
+  meetingIntegration?: Record<string, unknown>;
   llmProvider?: string;
   llmModel?: string;
   llmApiKey?: string;
@@ -107,6 +128,7 @@ export class AgentGraphService {
       allowedDomains,
       userMessage,
       enabledSkills,
+      meetingIntegration,
       llmProvider,
       llmModel,
       llmApiKey,
@@ -127,10 +149,53 @@ export class AgentGraphService {
     });
 
     const skills = enabledSkills ?? ['calculator', 'datetime', 'firecrawl'];
+    const normalizedMeetingIntegration: MeetingIntegrationConfig = {
+      provider:
+        typeof meetingIntegration?.['provider'] === 'string'
+          ? (meetingIntegration['provider'] as MeetingIntegrationConfig['provider'])
+          : 'none',
+      ...(typeof meetingIntegration?.['timezone'] === 'string'
+        ? { timezone: meetingIntegration['timezone'] }
+        : {}),
+      ...(typeof meetingIntegration?.['calendarId'] === 'string'
+        ? { calendarId: meetingIntegration['calendarId'] }
+        : {}),
+      ...(typeof meetingIntegration?.['googleAccessToken'] === 'string'
+        ? { googleAccessToken: meetingIntegration['googleAccessToken'] }
+        : {}),
+      ...(typeof meetingIntegration?.['googleRefreshToken'] === 'string'
+        ? { googleRefreshToken: meetingIntegration['googleRefreshToken'] }
+        : {}),
+      ...(typeof meetingIntegration?.['googleAccessTokenExpiresAt'] === 'string'
+        ? { googleAccessTokenExpiresAt: meetingIntegration['googleAccessTokenExpiresAt'] }
+        : {}),
+      ...(typeof meetingIntegration?.['zoomAccessToken'] === 'string'
+        ? { zoomAccessToken: meetingIntegration['zoomAccessToken'] }
+        : {}),
+      ...(typeof meetingIntegration?.['zoomRefreshToken'] === 'string'
+        ? { zoomRefreshToken: meetingIntegration['zoomRefreshToken'] }
+        : {}),
+      ...(typeof meetingIntegration?.['zoomAccessTokenExpiresAt'] === 'string'
+        ? { zoomAccessTokenExpiresAt: meetingIntegration['zoomAccessTokenExpiresAt'] }
+        : {}),
+      ...(typeof meetingIntegration?.['calendlySchedulingUrl'] === 'string'
+        ? { calendlySchedulingUrl: meetingIntegration['calendlySchedulingUrl'] }
+        : {}),
+    };
     const allTools: DynamicStructuredTool[] = [];
     if (skills.includes('calculator')) allTools.push(calculatorTool);
     if (skills.includes('datetime')) allTools.push(datetimeTool);
     if (skills.includes('firecrawl')) allTools.push(createFirecrawlTool({ allowedDomains }));
+    if (skills.includes('lead_qualification')) allTools.push(leadQualificationTool);
+    if (skills.includes('meeting_scheduler')) {
+      allTools.push(meetingSchedulerTool);
+      allTools.push(
+        createMeetingBookingTool({
+          businessName,
+          integration: normalizedMeetingIntegration,
+        })
+      );
+    }
 
     const llmOptions: LlmOptions = { streaming: true };
     if (llmProvider) llmOptions.provider = llmProvider as NonNullable<LlmOptions['provider']>;

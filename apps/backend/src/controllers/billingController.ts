@@ -4,8 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 import { eq, sql } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { businesses } from '@gcfis/db/schema';
-import { requireSupabaseAuth } from '../middleware/auth';
-import { getBusinessByOwner } from '../lib/business';
+import { requireBusinessAuth } from '../middleware/auth';
+import { getBusinessById } from '../lib/business';
 import {
   cancelSubscription,
   constructWebhookEvent,
@@ -17,28 +17,22 @@ import {
 
 export class BillingController {
   public readonly getStatus = async (req: Request, res: Response) => {
-    const auth = await requireSupabaseAuth(req, res);
+    const auth = await requireBusinessAuth(req, res, 'viewer');
     if (!auth) return;
 
-    const business = await getBusinessByOwner(auth.userId);
-    if (!business) {
-      return res.status(404).json({ ok: false, error: 'Business not found' });
-    }
-
+    const business = await getBusinessById(auth.businessId);
+    if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
     return res.json({ ok: true, data: getBillingStatus(business) });
   };
 
   public readonly checkout = async (req: Request, res: Response) => {
-    const auth = await requireSupabaseAuth(req, res);
+    const auth = await requireBusinessAuth(req, res, 'owner');
     if (!auth) return;
 
-    const business = await getBusinessByOwner(auth.userId);
-    if (!business) {
-      return res.status(404).json({ ok: false, error: 'Business not found' });
-    }
-
+    const business = await getBusinessById(auth.businessId);
+    if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
     const supabaseUrl = process.env['NEXT_PUBLIC_SUPABASE_URL'];
-    const serviceKey = process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'];
+    const serviceKey = process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY'];
     if (!supabaseUrl || !serviceKey) {
       return res.status(500).json({ ok: false, error: 'Supabase env vars missing' });
     }
@@ -62,14 +56,11 @@ export class BillingController {
   };
 
   public readonly portal = async (req: Request, res: Response) => {
-    const auth = await requireSupabaseAuth(req, res);
+    const auth = await requireBusinessAuth(req, res, 'owner');
     if (!auth) return;
 
-    const business = await getBusinessByOwner(auth.userId);
-    if (!business) {
-      return res.status(404).json({ ok: false, error: 'Business not found' });
-    }
-
+    const business = await getBusinessById(auth.businessId);
+    if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
     if (!business.stripeCustomerId) {
       return res.status(400).json({ ok: false, error: 'No active subscription found. Please subscribe first.' });
     }
