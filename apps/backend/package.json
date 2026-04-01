@@ -1,0 +1,39 @@
+{
+  "name": "backend",
+  "version": "0.0.1",
+  "private": true,
+  "description": "GCFIS Dedicated Backend — Next.js App Router API routes only (no UI pages)",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "clean": "rimraf .next dist"
+  },
+  "dependencies": {
+    "@gcfis/agent": "workspace:*",
+    "@gcfis/db": "workspace:*",
+    "@gcfis/tools": "workspace:*",
+    "@gcfis/types": "workspace:*",
+    "@langchain/core": "^0.3.37",
+    "@langchain/langgraph": "^0.2.40",
+    "@langchain/ollama": "^0.1.5",
+    "@mendable/firecrawl-js": "^1.16.0",
+    "@supabase/supabase-js": "^2.47.10",
+    "drizzle-orm": "^0.38.3",
+    "next": "^15.1.7",
+    "postgres": "^3.4.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "stripe": "^18.4.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3"
+  }
+}
