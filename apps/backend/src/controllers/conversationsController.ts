@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { conversations, messages } from '@gcfis/db/schema';
 import { requireBusinessAuth } from '../middleware/auth';
+import { resolveAgentForBusiness } from '../lib/agents';
 
 export class ConversationsController {
   public readonly list = async (req: Request, res: Response) => {
@@ -11,6 +12,16 @@ export class ConversationsController {
 
     const limitParam = Number(req.query['limit'] ?? '25');
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 25;
+    const requestedAgentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'].trim() : '';
+
+    let agentId: string | undefined;
+    if (requestedAgentId) {
+      const resolved = await resolveAgentForBusiness(auth.businessId, requestedAgentId);
+      if (!resolved || resolved.id !== requestedAgentId) {
+        return res.status(400).json({ ok: false, error: 'Invalid agentId for this business' });
+      }
+      agentId = resolved.id;
+    }
 
     const db = getDb();
     const conversationRows = await db
@@ -21,7 +32,11 @@ export class ConversationsController {
         updatedAt: conversations.updatedAt,
       })
       .from(conversations)
-      .where(eq(conversations.businessId, auth.businessId))
+      .where(
+        agentId
+          ? and(eq(conversations.businessId, auth.businessId), eq(conversations.agentId, agentId))
+          : eq(conversations.businessId, auth.businessId)
+      )
       .orderBy(desc(conversations.updatedAt))
       .limit(limit);
 
@@ -75,8 +90,16 @@ export class ConversationsController {
     if (!auth) return;
 
     const id = req.params['id'];
+    const requestedAgentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'].trim() : '';
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Conversation ID is required' });
+    }
+
+    if (requestedAgentId) {
+      const resolved = await resolveAgentForBusiness(auth.businessId, requestedAgentId);
+      if (!resolved || resolved.id !== requestedAgentId) {
+        return res.status(400).json({ ok: false, error: 'Invalid agentId for this business' });
+      }
     }
 
     const db = getDb();
@@ -84,6 +107,7 @@ export class ConversationsController {
       .select({
         id: conversations.id,
         businessId: conversations.businessId,
+        agentId: conversations.agentId,
         sessionId: conversations.sessionId,
         createdAt: conversations.createdAt,
         updatedAt: conversations.updatedAt,
@@ -93,6 +117,10 @@ export class ConversationsController {
       .limit(1);
 
     if (!conversation || conversation.businessId !== auth.businessId) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found' });
+    }
+
+    if (requestedAgentId && conversation.agentId !== requestedAgentId) {
       return res.status(404).json({ ok: false, error: 'Conversation not found' });
     }
 

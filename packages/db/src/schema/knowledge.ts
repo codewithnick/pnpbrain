@@ -4,17 +4,16 @@
  * Requires the pgvector extension:
  *   CREATE EXTENSION IF NOT EXISTS vector;
  */
-import { sql } from 'drizzle-orm';
 import {
   customType,
   integer,
   pgTable,
-  real,
   text,
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { businesses } from './businesses';
+import { agents } from './agents';
 
 /**
  * pgvector custom column type.
@@ -30,7 +29,8 @@ export const vector = (name: string, dimensions: number) =>
     },
     fromDriver(value: string): number[] {
       return value
-        .replace(/[\[\]]/g, '')
+        .replaceAll('[', '')
+        .replaceAll(']', '')
         .split(',')
         .map(Number);
     },
@@ -42,6 +42,7 @@ export const knowledgeDocuments = pgTable('knowledge_documents', {
   businessId: uuid('business_id')
     .notNull()
     .references(() => businesses.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   content: text('content').notNull(),
   sourceUrl: text('source_url'),
@@ -62,6 +63,7 @@ export const knowledgeChunks = pgTable('knowledge_chunks', {
   businessId: uuid('business_id')
     .notNull()
     .references(() => businesses.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   content: text('content').notNull(),
   chunkIndex: integer('chunk_index').notNull(),
   /** 1536-dim embeddings (OpenAI text-embedding-3-small or Ollama nomic-embed-text) */

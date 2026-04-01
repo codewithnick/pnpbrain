@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { fetchBackend } from '@/lib/supabase';
+import { fetchAgents, resolveActiveAgent } from '@/lib/agents';
 
 // ---------------------------------------------------------------------------
 // Integration registry — add a new entry here to add a new integration card.
@@ -272,13 +274,23 @@ function IntegrationCard({
 
 export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
+  const [hasActiveAgent, setHasActiveAgent] = useState(true);
   const [globalError, setGlobalError] = useState('');
   const [globalSuccess, setGlobalSuccess] = useState('');
+  const [integrationSearch, setIntegrationSearch] = useState('');
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
+      const agents = await fetchAgents().catch(() => []);
+      const active = resolveActiveAgent(agents);
+      if (!active) {
+        setHasActiveAgent(false);
+        setLoading(false);
+        return;
+      }
+
       const res = await fetchBackend('/api/business/me');
       if (!res.ok) {
         setLoading(false);
@@ -288,6 +300,7 @@ export default function IntegrationsPage() {
         data?: { integrations?: IntegrationStatus[] };
       };
       setIntegrations(json.data?.integrations ?? []);
+      setHasActiveAgent(true);
 
       const oauthStatus = new URLSearchParams(window.location.search).get('oauth');
       if (oauthStatus?.endsWith('_connected')) {
@@ -396,8 +409,40 @@ export default function IntegrationsPage() {
     []
   );
 
+  const normalizedIntegrationSearch = integrationSearch.trim().toLowerCase();
+  const filteredIntegrations = INTEGRATIONS.filter((integration) => {
+    if (!normalizedIntegrationSearch) return true;
+    const searchableFieldLabels = integration.configFields
+      .map((field) => field.label)
+      .join(' ')
+      .toLowerCase();
+
+    return (
+      integration.name.toLowerCase().includes(normalizedIntegrationSearch) ||
+      integration.description.toLowerCase().includes(normalizedIntegrationSearch) ||
+      integration.id.toLowerCase().includes(normalizedIntegrationSearch) ||
+      searchableFieldLabels.includes(normalizedIntegrationSearch)
+    );
+  });
+
   if (loading) {
     return <div className="p-8 text-sm text-gray-400 dark:text-slate-500">Loading…</div>;
+  }
+
+  if (!hasActiveAgent) {
+    return (
+      <div className="p-8 max-w-3xl">
+        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-900">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">No active agent selected</h2>
+          <p className="mt-2 text-sm text-gray-600 dark:text-slate-300">
+            Create an agent first, then select it to connect integrations.
+          </p>
+          <Link href="/dashboard/agents" className="mt-4 inline-flex rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            Go to Agents
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -410,11 +455,21 @@ export default function IntegrationsPage() {
         </p>
       </div>
 
+      <div>
+        <input
+          type="text"
+          value={integrationSearch}
+          onChange={(e) => setIntegrationSearch(e.target.value)}
+          placeholder="Search integrations..."
+          className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+        />
+      </div>
+
       {globalError && <Alert type="error" message={globalError} />}
       {globalSuccess && <Alert type="success" message={globalSuccess} />}
 
       <div className="space-y-4">
-        {INTEGRATIONS.map((def) => (
+        {filteredIntegrations.map((def) => (
           <IntegrationCard
             key={def.id}
             def={def}
@@ -425,6 +480,12 @@ export default function IntegrationsPage() {
             onSaveConfig={handleSaveConfig}
           />
         ))}
+
+        {filteredIntegrations.length === 0 && (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+            No integrations match your search.
+          </div>
+        )}
       </div>
     </div>
   );

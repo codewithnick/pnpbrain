@@ -2,7 +2,7 @@
   "name": "@gcfis/widget",
   "version": "0.0.1",
   "private": true,
-  "description": "GCFIS embeddable chat widget — standalone React app + script tag build",
+  "description": "PNPBrain embeddable chat widget — standalone React app + script tag build",
   "scripts": {
     "dev": "next dev --port 3003",
     "build": "next build",

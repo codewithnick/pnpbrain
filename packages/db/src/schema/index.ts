@@ -2,8 +2,11 @@
  * Drizzle schema barrel — exports all tables and relations.
  */
 export * from './businesses';
-export * from './business_skill_settings';
-export * from './business_integrations';
+export * from './agents';
+export * from './skills';
+export * from './agent_skill_settings';
+export * from './agent_integrations';
+export * from './credits';
 export * from './business_members';
 export * from './invitations';
 export * from './knowledge';

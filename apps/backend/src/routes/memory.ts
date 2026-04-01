@@ -4,12 +4,10 @@ import { MemoryController } from '../controllers/memoryController';
 const router: ExpressRouter = Router();
 const controller = new MemoryController();
 
-/**
- * GET /api/memory
- *
- * Placeholder for memory operations endpoint.
- * This could be extended for memory retrieval, updates, etc.
- */
+router.get('/agent', controller.getAgentMemory);
+router.delete('/agent/:id', controller.deleteAgentMemory);
+
 router.get('/', controller.getMemory);
+router.delete('/:id', controller.deleteMemory);
 
 export default router;

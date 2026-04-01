@@ -28,10 +28,10 @@ export default function Navbar() {
         <Toolbar disableGutters sx={{ py: 1.2, justifyContent: 'space-between' }}>
           <Box component={Link} href="/" sx={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 1.2 }}>
             <Box sx={{ width: 30, height: 30, borderRadius: 2, bgcolor: 'primary.main', color: '#ecfeff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>
-              G
+              P
             </Box>
             <Typography variant="h6" sx={{ fontSize: '1.05rem', fontWeight: 700 }}>
-              GCFIS
+              PNPBrain
             </Typography>
           </Box>
 

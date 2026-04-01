@@ -1,7 +1,7 @@
 import { getDb } from '@gcfis/db/client';
 import {
-  businessIntegrations,
-  businessSkillSettings,
+  agentIntegrations,
+  agentSkillSettings,
   SKILL_NAMES,
 } from '@gcfis/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -18,22 +18,29 @@ function parseSkillName(value: string): SkillName | null {
   return SKILL_SET.has(value) ? (value as SkillName) : null;
 }
 
-export async function getEnabledSkillsForBusiness(businessId: string): Promise<string[]> {
+async function listEnabledSkillsForAgent(agentId: string): Promise<string[]> {
   const db = getDb();
   const rows = await db
-    .select({ skillName: businessSkillSettings.skillName })
-    .from(businessSkillSettings)
-    .where(
-      and(
-        eq(businessSkillSettings.businessId, businessId),
-        eq(businessSkillSettings.enabled, true)
-      )
-    );
+    .select({ skillName: agentSkillSettings.skillName })
+    .from(agentSkillSettings)
+    .where(and(eq(agentSkillSettings.agentId, agentId), eq(agentSkillSettings.enabled, true)));
+
   return rows.map((row) => row.skillName);
 }
 
-export async function setEnabledSkillsForBusiness(
-  businessId: string,
+export async function getEnabledSkillsForAgentScope(input: {
+  businessId?: string;
+  agentId?: string | null;
+}): Promise<string[]> {
+  if (!input.agentId) {
+    return [];
+  }
+
+  return listEnabledSkillsForAgent(input.agentId);
+}
+
+export async function setEnabledSkillsForAgent(
+  agentId: string,
   skills: string[]
 ): Promise<void> {
   const sanitizedSkills: SkillName[] = [...new Set(skills)]
@@ -43,24 +50,24 @@ export async function setEnabledSkillsForBusiness(
   const db = getDb();
 
   await db
-    .insert(businessSkillSettings)
-    .values(SKILL_NAMES.map((skillName) => ({ businessId, skillName, enabled: false })))
+    .insert(agentSkillSettings)
+    .values(SKILL_NAMES.map((skillName) => ({ agentId, skillName, enabled: false })))
     .onConflictDoNothing();
 
   await db
-    .update(businessSkillSettings)
+    .update(agentSkillSettings)
     .set({ enabled: false, updatedAt: sql`now()` })
-    .where(eq(businessSkillSettings.businessId, businessId));
+    .where(eq(agentSkillSettings.agentId, agentId));
 
   if (sanitizedSkills.length === 0) return;
 
   await db
-    .update(businessSkillSettings)
+    .update(agentSkillSettings)
     .set({ enabled: true, updatedAt: sql`now()` })
     .where(
       and(
-        eq(businessSkillSettings.businessId, businessId),
-        inArray(businessSkillSettings.skillName, sanitizedSkills)
+        eq(agentSkillSettings.agentId, agentId),
+        inArray(agentSkillSettings.skillName, sanitizedSkills)
       )
     );
 }
@@ -119,7 +126,17 @@ function parseConfigJson(raw: string | null | undefined): IntegrationConfig {
   }
 }
 
-async function backfillEncryptedTokensIfNeeded(row: {
+type IntegrationRow = {
+  id: string;
+  provider: string;
+  isDefault: boolean;
+  accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: Date | null;
+  configJson: string | null;
+};
+
+async function backfillEncryptedAgentTokensIfNeeded(row: {
   id: string;
   accessToken: string | null;
   refreshToken: string | null;
@@ -133,26 +150,27 @@ async function backfillEncryptedTokensIfNeeded(row: {
 
   const db = getDb();
   await db
-    .update(businessIntegrations)
+    .update(agentIntegrations)
     .set({
       accessToken: encryptedAccess,
       refreshToken: encryptedRefresh,
       updatedAt: sql`now()`,
     })
-    .where(eq(businessIntegrations.id, row.id));
+    .where(eq(agentIntegrations.id, row.id));
 }
 
-export async function getAllIntegrationsForBusiness(
-  businessId: string
-): Promise<IntegrationStatus[]> {
+async function getAgentIntegrationRows(agentId: string): Promise<IntegrationRow[]> {
   const db = getDb();
   const rows = await db
     .select()
-    .from(businessIntegrations)
-    .where(eq(businessIntegrations.businessId, businessId));
+    .from(agentIntegrations)
+    .where(eq(agentIntegrations.agentId, agentId));
 
-  await Promise.all(rows.map((row) => backfillEncryptedTokensIfNeeded(row)));
+  await Promise.all(rows.map((row) => backfillEncryptedAgentTokensIfNeeded(row)));
+  return rows;
+}
 
+function mapIntegrationRows(rows: IntegrationRow[]): IntegrationStatus[] {
   return rows.map((row) => {
     const config = parseConfigJson(row.configJson);
     return {
@@ -165,97 +183,7 @@ export async function getAllIntegrationsForBusiness(
   });
 }
 
-export async function upsertIntegration(
-  businessId: string,
-  provider: string,
-  data: {
-    isDefault?: boolean;
-    accessToken?: string | null;
-    refreshToken?: string | null;
-    tokenExpiresAt?: Date | null;
-    configJson?: string | null;
-  }
-): Promise<void> {
-  const db = getDb();
-
-  // Clear the current default from other rows when this one becomes default.
-  if (data.isDefault) {
-    await db
-      .update(businessIntegrations)
-      .set({ isDefault: false, updatedAt: sql`now()` })
-      .where(
-        and(
-          eq(businessIntegrations.businessId, businessId),
-          eq(businessIntegrations.isDefault, true)
-        )
-      );
-  }
-
-  await db
-    .insert(businessIntegrations)
-    .values({
-      businessId,
-      provider,
-      isDefault: data.isDefault ?? false,
-      accessToken: encryptSecret(data.accessToken),
-      refreshToken: encryptSecret(data.refreshToken),
-      tokenExpiresAt: data.tokenExpiresAt ?? null,
-      configJson: data.configJson ?? null,
-    })
-    .onConflictDoUpdate({
-      target: [businessIntegrations.businessId, businessIntegrations.provider],
-      set: {
-        ...(data.isDefault !== undefined ? { isDefault: data.isDefault } : {}),
-        ...(data.accessToken !== undefined
-          ? { accessToken: encryptSecret(data.accessToken) }
-          : {}),
-        ...(data.refreshToken !== undefined
-          ? { refreshToken: encryptSecret(data.refreshToken) }
-          : {}),
-        ...(data.tokenExpiresAt !== undefined ? { tokenExpiresAt: data.tokenExpiresAt } : {}),
-        ...(data.configJson !== undefined ? { configJson: data.configJson } : {}),
-        updatedAt: sql`now()`,
-      },
-    });
-}
-
-export async function disconnectIntegration(
-  businessId: string,
-  provider: string
-): Promise<void> {
-  const db = getDb();
-  await db
-    .update(businessIntegrations)
-    .set({
-      accessToken: null,
-      refreshToken: null,
-      tokenExpiresAt: null,
-      isDefault: false,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(
-        eq(businessIntegrations.businessId, businessId),
-        eq(businessIntegrations.provider, provider)
-      )
-    );
-}
-
-/**
- * Get the active meeting integration for use at agent runtime.
- * Returns the row marked isDefault first; falls back to the first connected row.
- */
-export async function getMeetingIntegrationForBusiness(
-  businessId: string
-): Promise<MeetingIntegrationConfig> {
-  const db = getDb();
-  const rows = await db
-    .select()
-    .from(businessIntegrations)
-    .where(eq(businessIntegrations.businessId, businessId));
-
-  await Promise.all(rows.map((row) => backfillEncryptedTokensIfNeeded(row)));
-
+function pickMeetingIntegration(rows: IntegrationRow[]): MeetingIntegrationConfig {
   if (rows.length === 0) return { provider: 'none' };
 
   const meetingProviders = new Set(['google', 'zoom', 'calendly']);
@@ -263,8 +191,7 @@ export async function getMeetingIntegrationForBusiness(
   if (meetingRows.length === 0) return { provider: 'none' };
 
   const defaultRow = meetingRows.find((r) => r.isDefault);
-  const connectedRow = rows.find((r) => {
-    if (!meetingProviders.has(r.provider)) return false;
+  const connectedRow = meetingRows.find((r) => {
     const cfg = parseConfigJson(r.configJson);
     return !!r.accessToken || !!cfg.schedulingUrl;
   });
@@ -284,17 +211,7 @@ export async function getMeetingIntegrationForBusiness(
   };
 }
 
-export async function getSupportIntegrationForBusiness(
-  businessId: string
-): Promise<SupportIntegrationConfig> {
-  const db = getDb();
-  const rows = await db
-    .select()
-    .from(businessIntegrations)
-    .where(eq(businessIntegrations.businessId, businessId));
-
-  await Promise.all(rows.map((row) => backfillEncryptedTokensIfNeeded(row)));
-
+function pickSupportIntegration(rows: IntegrationRow[]): SupportIntegrationConfig {
   const SUPPORT_PROVIDERS = new Set(['zendesk', 'freshdesk']);
   const supportRows = rows.filter((row) => SUPPORT_PROVIDERS.has(row.provider));
   if (supportRows.length === 0) return { provider: 'none' };
@@ -316,4 +233,109 @@ export async function getSupportIntegrationForBusiness(
     ...(accessToken ? { accessToken } : {}),
     ...(Object.keys(config).length > 0 ? { config } : {}),
   };
+}
+
+export async function getAllIntegrationsForAgentScope(input: {
+  businessId?: string;
+  agentId?: string | null;
+}): Promise<IntegrationStatus[]> {
+  if (!input.agentId) {
+    return [];
+  }
+
+  const agentRows = await getAgentIntegrationRows(input.agentId);
+  return mapIntegrationRows(agentRows);
+}
+
+export async function upsertIntegrationForAgent(
+  agentId: string,
+  provider: string,
+  data: {
+    isDefault?: boolean;
+    accessToken?: string | null;
+    refreshToken?: string | null;
+    tokenExpiresAt?: Date | null;
+    configJson?: string | null;
+  }
+): Promise<void> {
+  const db = getDb();
+
+  if (data.isDefault) {
+    await db
+      .update(agentIntegrations)
+      .set({ isDefault: false, updatedAt: sql`now()` })
+      .where(and(eq(agentIntegrations.agentId, agentId), eq(agentIntegrations.isDefault, true)));
+  }
+
+  await db
+    .insert(agentIntegrations)
+    .values({
+      agentId,
+      provider,
+      isDefault: data.isDefault ?? false,
+      accessToken: encryptSecret(data.accessToken),
+      refreshToken: encryptSecret(data.refreshToken),
+      tokenExpiresAt: data.tokenExpiresAt ?? null,
+      configJson: data.configJson ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [agentIntegrations.agentId, agentIntegrations.provider],
+      set: {
+        ...(data.isDefault !== undefined ? { isDefault: data.isDefault } : {}),
+        ...(data.accessToken !== undefined
+          ? { accessToken: encryptSecret(data.accessToken) }
+          : {}),
+        ...(data.refreshToken !== undefined
+          ? { refreshToken: encryptSecret(data.refreshToken) }
+          : {}),
+        ...(data.tokenExpiresAt !== undefined ? { tokenExpiresAt: data.tokenExpiresAt } : {}),
+        ...(data.configJson !== undefined ? { configJson: data.configJson } : {}),
+        updatedAt: sql`now()`,
+      },
+    });
+}
+
+export async function disconnectIntegrationForAgent(
+  agentId: string,
+  provider: string
+): Promise<void> {
+  const db = getDb();
+  await db
+    .update(agentIntegrations)
+    .set({
+      accessToken: null,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      isDefault: false,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(agentIntegrations.agentId, agentId), eq(agentIntegrations.provider, provider)));
+}
+
+/**
+ * Get the active meeting integration for use at agent runtime.
+ * Returns the row marked isDefault first; falls back to the first connected row.
+ */
+export async function getMeetingIntegrationForAgentScope(input: {
+  businessId?: string;
+  agentId?: string | null;
+}): Promise<MeetingIntegrationConfig> {
+  if (!input.agentId) {
+    return { provider: 'none' };
+  }
+
+  const agentRows = await getAgentIntegrationRows(input.agentId);
+  return pickMeetingIntegration(agentRows);
+}
+
+export async function getSupportIntegrationForAgentScope(input: {
+  businessId?: string;
+  agentId?: string | null;
+}): Promise<SupportIntegrationConfig> {
+  if (!input.agentId) {
+    return { provider: 'none' };
+  }
+
+  const agentRows = await getAgentIntegrationRows(input.agentId);
+  return pickSupportIntegration(agentRows);
 }

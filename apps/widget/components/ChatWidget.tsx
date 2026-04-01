@@ -4,7 +4,7 @@
  * ChatWidget — the core embeddable chat component.
  *
  * Self-contained: no shared UI library, imports only from @gcfis/types.
- * Communicates with the GCFIS backend via streaming SSE fetch.
+ * Communicates with the PNPBrain backend via streaming SSE fetch.
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -244,7 +244,7 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
                 ↑
               </button>
             </div>
-            <p className="text-center text-[10px] text-gray-300 mt-2">Powered by GCFIS</p>
+            <p className="text-center text-[10px] text-gray-300 mt-2">Powered by PNPBrain</p>
           </div>
         </div>
       )}

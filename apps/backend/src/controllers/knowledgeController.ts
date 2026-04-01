@@ -6,10 +6,12 @@ import { getDb } from '@gcfis/db/client';
 import { knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
 import { chunkText, getEmbeddingModel } from '@gcfis/agent/rag';
 import { S3KnowledgeStorageService } from '../lib/s3-knowledge';
+import { resolveAgentForBusiness } from '../lib/agents';
 import { requireApiKey, requireBusinessAuth } from '../middleware/auth';
 
 const createDocSchema = z.object({
   businessId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
   title: z.string().min(1).max(500),
   content: z.string().min(1),
   sourceUrl: z.string().url().optional(),
@@ -19,7 +21,12 @@ export class KnowledgeController {
   public readonly upload = multer({ storage: multer.memoryStorage() });
 
   public readonly list = async (req: Request, res: Response) => {
-    const scope = await this.resolveBusinessScope(req, res, String(req.query['businessId'] ?? '') || null);
+    const scope = await this.resolveBusinessScope(
+      req,
+      res,
+      String(req.query['businessId'] ?? '') || null,
+      String(req.query['agentId'] ?? '') || null,
+    );
     if (!scope) return;
 
     const db = getDb();
@@ -37,7 +44,14 @@ export class KnowledgeController {
         updatedAt: knowledgeDocuments.updatedAt,
       })
       .from(knowledgeDocuments)
-      .where(eq(knowledgeDocuments.businessId, scope.businessId))
+      .where(
+        scope.agentId
+          ? and(
+              eq(knowledgeDocuments.businessId, scope.businessId),
+              eq(knowledgeDocuments.agentId, scope.agentId)
+            )
+          : eq(knowledgeDocuments.businessId, scope.businessId)
+      )
       .orderBy(knowledgeDocuments.createdAt);
 
     return res.json({ ok: true, data: docs });
@@ -49,6 +63,7 @@ export class KnowledgeController {
       const title = String(req.body['title'] ?? '').trim();
       const sourceUrl = String(req.body['sourceUrl'] ?? '').trim() || undefined;
       const requestedBusinessId = String(req.body['businessId'] ?? '').trim() || null;
+      const requestedAgentId = String(req.body['agentId'] ?? '').trim() || null;
 
       if (!title) {
         return res.status(400).json({ ok: false, error: 'title is required' });
@@ -59,7 +74,7 @@ export class KnowledgeController {
         return res.status(400).json({ ok: false, error: 'file is required' });
       }
 
-      const scope = await this.resolveBusinessScope(req, res, requestedBusinessId);
+      const scope = await this.resolveBusinessScope(req, res, requestedBusinessId, requestedAgentId);
       if (!scope) return;
 
       const allowed = new Set([
@@ -92,6 +107,7 @@ export class KnowledgeController {
         .insert(knowledgeDocuments)
         .values({
           businessId: scope.businessId,
+          agentId: scope.agentId,
           title,
           content,
           sourceUrl,
@@ -106,7 +122,7 @@ export class KnowledgeController {
         return res.status(500).json({ ok: false, error: 'Failed to create document' });
       }
 
-      this.embedDocument(doc.id, scope.businessId, content).catch((err) =>
+      this.embedDocument(doc.id, scope.businessId, scope.agentId, content).catch((err) =>
         console.error('[knowledge] embedding failed:', err)
       );
 
@@ -118,7 +134,12 @@ export class KnowledgeController {
       return res.status(400).json({ ok: false, error: parsed.error.issues.map((i) => i.message).join(', ') });
     }
 
-    const scope = await this.resolveBusinessScope(req, res, parsed.data.businessId ?? null);
+    const scope = await this.resolveBusinessScope(
+      req,
+      res,
+      parsed.data.businessId ?? null,
+      parsed.data.agentId ?? null,
+    );
     if (!scope) return;
 
     const s3 = new S3KnowledgeStorageService();
@@ -134,6 +155,7 @@ export class KnowledgeController {
       .insert(knowledgeDocuments)
       .values({
         businessId: scope.businessId,
+        agentId: scope.agentId,
         title: parsed.data.title,
         content: parsed.data.content,
         sourceUrl: parsed.data.sourceUrl,
@@ -148,7 +170,7 @@ export class KnowledgeController {
       return res.status(500).json({ ok: false, error: 'Failed to create document' });
     }
 
-    this.embedDocument(doc.id, scope.businessId, parsed.data.content).catch((err) =>
+    this.embedDocument(doc.id, scope.businessId, scope.agentId, parsed.data.content).catch((err) =>
       console.error('[knowledge] embedding failed:', err)
     );
 
@@ -263,11 +285,22 @@ export class KnowledgeController {
   private async resolveBusinessScope(
     req: Parameters<typeof requireBusinessAuth>[0],
     res: Parameters<typeof requireBusinessAuth>[1],
-    requestedBusinessId?: string | null
-  ): Promise<{ businessId: string } | null> {
+    requestedBusinessId?: string | null,
+    requestedAgentId?: string | null,
+  ): Promise<{ businessId: string; agentId?: string } | null> {
     if (req.header('authorization')?.startsWith('Bearer ')) {
       const auth = await requireBusinessAuth(req, res, 'member');
       if (!auth) return null;
+
+      if (requestedAgentId) {
+        const agent = await resolveAgentForBusiness(auth.businessId, requestedAgentId);
+        if (!agent || agent.id !== requestedAgentId) {
+          res.status(404).json({ ok: false, error: 'Agent not found' });
+          return null;
+        }
+
+        return { businessId: auth.businessId, agentId: agent.id };
+      }
 
       return { businessId: auth.businessId };
     }
@@ -279,10 +312,18 @@ export class KnowledgeController {
       return null;
     }
 
-    return { businessId: requestedBusinessId };
+    return {
+      businessId: requestedBusinessId,
+      ...(requestedAgentId ? { agentId: requestedAgentId } : {}),
+    };
   }
 
-  private async embedDocument(documentId: string, businessId: string, content: string): Promise<void> {
+  private async embedDocument(
+    documentId: string,
+    businessId: string,
+    agentId: string | undefined,
+    content: string,
+  ): Promise<void> {
     const chunks = chunkText(content);
     const embeddings = getEmbeddingModel();
     const vectors = await embeddings.embedDocuments(chunks.map((c) => c.content));
@@ -292,6 +333,7 @@ export class KnowledgeController {
       chunks.map((chunk, i) => ({
         documentId,
         businessId,
+        agentId,
         content: chunk.content,
         chunkIndex: chunk.index,
         embedding: vectors[i] ?? [],

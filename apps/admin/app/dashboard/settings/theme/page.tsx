@@ -1,12 +1,16 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { fetchBackend } from '@/lib/supabase';
+import { fetchAgents, resolveActiveAgent } from '@/lib/agents';
 
 const fieldCls =
   'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
 export default function ThemeSettingsPage() {
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [hasActiveAgent, setHasActiveAgent] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -21,30 +25,33 @@ export default function ThemeSettingsPage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetchBackend('/api/business/me');
-      if (!res.ok) {
-        setLoading(false);
-        return;
-      }
+      try {
+        const agents = await fetchAgents();
+        const active = resolveActiveAgent(agents);
+        if (!active) {
+          setHasActiveAgent(false);
+          setLoading(false);
+          return;
+        }
 
-      const json = (await res.json()) as { data?: Record<string, unknown> };
-      const data = json.data;
-      if (!data) {
-        setLoading(false);
-        return;
-      }
+        setHasActiveAgent(true);
+        setAgentId(active.id);
 
-      if (typeof data.primaryColor === 'string') setPrimaryColor(data.primaryColor);
-      if (typeof data.botName === 'string') setBotName(data.botName);
-      if (typeof data.welcomeMessage === 'string') setWelcomeMessage(data.welcomeMessage);
-      if (data.widgetPosition === 'bottom-left' || data.widgetPosition === 'bottom-right') {
-        setWidgetPosition(data.widgetPosition);
+        if (typeof active.primaryColor === 'string') setPrimaryColor(active.primaryColor);
+        if (typeof active.botName === 'string') setBotName(active.botName);
+        if (typeof active.welcomeMessage === 'string') setWelcomeMessage(active.welcomeMessage);
+        if (active.widgetPosition === 'bottom-left' || active.widgetPosition === 'bottom-right') {
+          setWidgetPosition(active.widgetPosition);
+        }
+        if (active.widgetTheme === 'light' || active.widgetTheme === 'dark') {
+          setWidgetTheme(active.widgetTheme);
+        }
+        if (typeof active.showAvatar === 'boolean') setShowAvatar(active.showAvatar);
+        setLoading(false);
+      } catch {
+        setError('Failed to load agent theme configuration.');
+        setLoading(false);
       }
-      if (data.widgetTheme === 'light' || data.widgetTheme === 'dark') {
-        setWidgetTheme(data.widgetTheme);
-      }
-      if (typeof data.showAvatar === 'boolean') setShowAvatar(data.showAvatar);
-      setLoading(false);
     })();
   }, []);
 
@@ -54,8 +61,14 @@ export default function ThemeSettingsPage() {
     setError('');
     setSuccess(false);
 
-    const res = await fetchBackend('/api/business/me', {
-      method: 'PUT',
+    if (!agentId) {
+      setSaving(false);
+      setError('No active agent selected.');
+      return;
+    }
+
+    const res = await fetchBackend(`/api/agents/${agentId}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         primaryColor,
@@ -80,6 +93,20 @@ export default function ThemeSettingsPage() {
   }
 
   if (loading) return <div className="text-sm text-gray-400 dark:text-slate-500 py-8">Loading…</div>;
+
+  if (!hasActiveAgent) {
+    return (
+      <div className="max-w-xl rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-900">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">No active agent selected</h2>
+        <p className="mt-2 text-sm text-gray-600 dark:text-slate-300">
+          Create an agent first, then select it to configure widget theme.
+        </p>
+        <Link href="/dashboard/agents" className="mt-4 inline-flex rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          Go to Agents
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSave} className="space-y-6 max-w-xl">

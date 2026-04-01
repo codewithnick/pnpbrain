@@ -1,5 +1,7 @@
 import { Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
+import path from 'node:path';
+import { config as loadDotenv } from 'dotenv';
 import { eq } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { firecrawlJobs } from '@gcfis/db/schema';
@@ -9,11 +11,46 @@ type CrawlJobData = {
   jobId?: string;
 };
 
+function loadWorkerEnv(): void {
+  const cwd = process.cwd();
+  const candidates = [
+    path.resolve(cwd, '.env'),
+    path.resolve(cwd, '.env.local'),
+    path.resolve(cwd, '../../.env'),
+    path.resolve(cwd, '../../.env.local'),
+  ];
+
+  for (const envPath of candidates) {
+    loadDotenv({ path: envPath, override: false });
+  }
+}
+
+function resolveRedisUrl(): string | null {
+  const explicitRedisUrl = process.env['REDIS_URL'];
+  if (explicitRedisUrl) {
+    return explicitRedisUrl;
+  }
+
+  const upstashRestUrl = process.env['UPSTASH_REDIS_REST_URL'];
+  const upstashRestToken = process.env['UPSTASH_REDIS_REST_TOKEN'];
+  if (!upstashRestUrl || !upstashRestToken) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(upstashRestUrl);
+    return `rediss://:${encodeURIComponent(upstashRestToken)}@${parsed.hostname}:6379`;
+  } catch {
+    return null;
+  }
+}
+
 const CRAWL_QUEUE = 'crawl-job';
-const redisUrl = process.env['REDIS_URL'];
+loadWorkerEnv();
+const redisUrl = resolveRedisUrl();
 
 if (!redisUrl) {
-  throw new Error('REDIS_URL is required for crawl worker');
+  throw new Error('REDIS_URL or UPSTASH_REDIS_REST_* is required for crawl worker');
 }
 
 const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
@@ -32,7 +69,12 @@ const worker = new Worker<CrawlJobData>(
 
     const db = getDb();
     const [record] = await db
-      .select({ id: firecrawlJobs.id, businessId: firecrawlJobs.businessId, urls: firecrawlJobs.urls })
+      .select({
+        id: firecrawlJobs.id,
+        businessId: firecrawlJobs.businessId,
+        agentId: firecrawlJobs.agentId,
+        urls: firecrawlJobs.urls,
+      })
       .from(firecrawlJobs)
       .where(eq(firecrawlJobs.id, jobId))
       .limit(1);
@@ -59,7 +101,7 @@ const worker = new Worker<CrawlJobData>(
       return;
     }
 
-    await processCrawlJob(record.id, record.businessId, urls);
+    await processCrawlJob(record.id, record.businessId, record.agentId ?? undefined, urls);
   },
   { connection, concurrency: Number.isNaN(concurrency) ? 3 : Math.max(1, concurrency) }
 );

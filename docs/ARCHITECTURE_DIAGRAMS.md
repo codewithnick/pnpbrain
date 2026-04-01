@@ -1,6 +1,6 @@
-# GCFIS Architecture Diagrams
+# PNPBrain Architecture Diagrams
 
-Visual representations of the GCFIS monorepo structure and data flow.
+Visual representations of the PNPBrain monorepo structure and data flow.
 
 ## 1. Monorepo Architecture Overview
 

@@ -1,8 +1,8 @@
-# GCFIS — Product Vision & Roadmap
+# PNPBrain — Product Vision & Roadmap
 
 ## Product Vision (2026–2028)
 
-GCFIS is the **plug-and-play AI Sales & Support Agent** that replaces broken website experiences (static pages, forms, basic chatbots) with a single intelligent conversational layer.
+PNPBrain is the **plug-and-play AI Sales & Support Agent** that replaces broken website experiences (static pages, forms, basic chatbots) with a single intelligent conversational layer.
 
 It answers instantly, detects intent, remembers context across visits, handles objections, qualifies leads, takes real actions (book meetings, check orders, refresh knowledge), and works 24/7 in English + Hindi/Hinglish.
 
@@ -26,7 +26,7 @@ It answers instantly, detects intent, remembers context across visits, handles o
 
 ## Open Questions & Next Steps
 
-1. Finalize branding (GCFIS vs. a shorter name like VaniFlow or SiteVani).
+1. Finalize branding language and positioning across web + product surfaces.
 2. Define exact pricing tiers (free tier, usage-based, enterprise).
 3. Plan beta program: target 10–20 WordPress/WooCommerce stores in India.
 4. Add observability (LangSmith or custom logging) for debugging agent paths.

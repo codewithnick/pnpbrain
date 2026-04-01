@@ -14,11 +14,11 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: 'GCFIS — General Customer Facing Intelligent System',
+  title: 'PNPBrain — Plug and Play Brain',
   description:
     'Add an AI-powered customer assistant to your website in minutes. RAG-powered, privacy-first, and fully customisable.',
   openGraph: {
-    title: 'GCFIS',
+    title: 'PNPBrain',
     description: 'AI customer assistant — powered by your knowledge base',
     type: 'website',
   },

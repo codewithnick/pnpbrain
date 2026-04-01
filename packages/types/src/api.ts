@@ -113,6 +113,39 @@ export interface DashboardStats {
   crawlJobs: number;
 }
 
+export interface DashboardUsage {
+  credits: {
+    used: number;
+    included: number | null;
+    remaining: number | null;
+    percentUsed: number | null;
+    unit: 'credit';
+  };
+  totals: {
+    conversations: number;
+    knowledgeDocuments: number;
+    memoryFacts: number;
+    userMessages: number;
+    assistantMessages: number;
+  };
+  skills: {
+    enabled: string[];
+    enabledCount: number;
+    trackedUsage: {
+      firecrawl: {
+        totalRuns: number;
+        successfulRuns: number;
+        failedRuns: number;
+      };
+      supportEscalation: {
+        totalTickets: number;
+        successfulTickets: number;
+        failedTickets: number;
+      };
+    };
+  };
+}
+
 // ─── /api/memory/* ────────────────────────────────────────────────────────────
 
 export interface MemoryFact {

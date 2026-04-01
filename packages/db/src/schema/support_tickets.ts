@@ -4,12 +4,14 @@
 import { jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { businesses } from './businesses';
 import { conversations } from './conversations';
+import { agents } from './agents';
 
 export const supportTickets = pgTable('support_tickets', {
   id: uuid('id').primaryKey().defaultRandom(),
   businessId: uuid('business_id')
     .notNull()
     .references(() => businesses.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   conversationId: uuid('conversation_id')
     .notNull()
     .references(() => conversations.id, { onDelete: 'cascade' }),

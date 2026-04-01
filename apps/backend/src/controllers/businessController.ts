@@ -3,12 +3,11 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { Business } from '@gcfis/db';
 import { getDb } from '@gcfis/db/client';
-import { businesses } from '@gcfis/db/schema';
-import { eq } from 'drizzle-orm';
+import { agents, businesses } from '@gcfis/db/schema';
+import { and, eq, sql } from 'drizzle-orm';
 import { requireBusinessAuth } from '../middleware/auth';
+import { generateAgentApiKey, resolveAgentForBusiness } from '../lib/agents';
 import {
-  ensureBusinessApiKey,
-  generateBusinessApiKey,
   generatePublicChatToken,
   getBusinessById,
   normalizeAllowedDomains,
@@ -16,16 +15,16 @@ import {
   updateBusiness,
 } from '../lib/business';
 import {
-  disconnectIntegration,
-  getAllIntegrationsForBusiness,
-  getMeetingIntegrationForBusiness,
-  getSupportIntegrationForBusiness,
-  getEnabledSkillsForBusiness,
-  setEnabledSkillsForBusiness,
-  upsertIntegration,
+  disconnectIntegrationForAgent,
+  getAllIntegrationsForAgentScope,
+  getEnabledSkillsForAgentScope,
+  getMeetingIntegrationForAgentScope,
+  getSupportIntegrationForAgentScope,
+  setEnabledSkillsForAgent,
+  upsertIntegrationForAgent,
 } from '../lib/businessSkills';
 
-const LLM_PROVIDERS = ['ollama', 'openai', 'anthropic'] as const;
+const LLM_PROVIDERS = ['ollama', 'openai', 'anthropic', 'gemini', 'deepseek', 'huggingface'] as const;
 const SKILL_NAMES = [
   'calculator',
   'datetime',
@@ -44,9 +43,25 @@ type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
 interface OAuthStatePayload {
   provider: OAuthProvider;
   businessId: string;
+  agentId?: string;
   returnTo?: string;
   iat: number;
   nonce: string;
+}
+
+interface AgentOverrideView {
+  id: string;
+  allowedDomains: string;
+  llmProvider: string;
+  llmModel: string;
+  llmBaseUrl: string | null;
+  primaryColor: string;
+  botName: string;
+  welcomeMessage: string;
+  widgetPosition: string;
+  widgetTheme: string;
+  showAvatar: boolean;
+  agentApiKey: string | null;
 }
 
 const updateSchema = z.object({
@@ -71,12 +86,19 @@ const connectSchema = z.object({
   returnTo: z.string().url().optional(),
 });
 
-async function toSafeBusinessResponse(business: Business) {
+async function toSafeBusinessResponse(
+  business: Business,
+  agentOverride?: AgentOverrideView | null,
+) {
+  const scope = agentOverride?.id
+    ? { businessId: business.id, agentId: agentOverride.id }
+    : { businessId: business.id, agentId: null };
+
   const [enabledSkills, integrations, meetingIntegration, supportIntegration] = await Promise.all([
-    getEnabledSkillsForBusiness(business.id),
-    getAllIntegrationsForBusiness(business.id),
-    getMeetingIntegrationForBusiness(business.id),
-    getSupportIntegrationForBusiness(business.id),
+    getEnabledSkillsForAgentScope(scope),
+    getAllIntegrationsForAgentScope(scope),
+    getMeetingIntegrationForAgentScope(scope),
+    getSupportIntegrationForAgentScope(scope),
   ]);
 
   return {
@@ -85,20 +107,20 @@ async function toSafeBusinessResponse(business: Business) {
     slug: business.slug,
     description: business.description,
     ownerUserId: business.ownerUserId,
-    allowedDomains: parseAllowedDomains(business.allowedDomains),
+    allowedDomains: parseAllowedDomains(agentOverride?.allowedDomains ?? '[]'),
     enabledSkills,
     integrations,
     meetingIntegration,
     supportIntegration,
-    llmProvider: business.llmProvider,
-    llmModel: business.llmModel,
-    llmBaseUrl: business.llmBaseUrl,
-    primaryColor: business.primaryColor,
-    botName: business.botName,
-    welcomeMessage: business.welcomeMessage,
-    widgetPosition: business.widgetPosition,
-    widgetTheme: business.widgetTheme,
-    showAvatar: business.showAvatar,
+    llmProvider: agentOverride?.llmProvider ?? 'ollama',
+    llmModel: agentOverride?.llmModel ?? 'llama3.1:8b',
+    llmBaseUrl: agentOverride?.llmBaseUrl ?? null,
+    primaryColor: agentOverride?.primaryColor ?? '#6366f1',
+    botName: agentOverride?.botName ?? 'GCFIS Assistant',
+    welcomeMessage: agentOverride?.welcomeMessage ?? 'Hi! How can I help you today?',
+    widgetPosition: agentOverride?.widgetPosition ?? 'bottom-right',
+    widgetTheme: agentOverride?.widgetTheme ?? 'light',
+    showAvatar: agentOverride?.showAvatar ?? true,
     trialEndsAt: business.trialEndsAt,
     subscriptionStatus: business.subscriptionStatus,
     stripeCustomerId: business.stripeCustomerId,
@@ -107,9 +129,19 @@ async function toSafeBusinessResponse(business: Business) {
     messagesUsedTotal: business.messagesUsedTotal,
     createdAt: business.createdAt,
     updatedAt: business.updatedAt,
-    agentApiKey: business.agentApiKey,
+    agentApiKey: agentOverride?.agentApiKey ?? null,
+    selectedAgentId: agentOverride?.id ?? null,
     publicChatToken: generatePublicChatToken(business),
   };
+}
+
+async function resolveRequestedAgent(req: Request, businessId: string) {
+  const headerAgentId = typeof req.headers['x-agent-id'] === 'string' ? req.headers['x-agent-id'] : undefined;
+  const queryAgentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined;
+  const requestedAgentId = (headerAgentId ?? queryAgentId)?.trim();
+
+  if (!requestedAgentId) return null;
+  return resolveAgentForBusiness(businessId, requestedAgentId);
 }
 
 export class BusinessController {
@@ -119,8 +151,8 @@ export class BusinessController {
 
     const business = await getBusinessById(auth.businessId);
     if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
-    const withApiKey = await ensureBusinessApiKey(business);
-    return res.json({ ok: true, data: await toSafeBusinessResponse(withApiKey) });
+    const selectedAgent = await resolveRequestedAgent(req, auth.businessId);
+    return res.json({ ok: true, data: await toSafeBusinessResponse(business, selectedAgent) });
   };
 
   public readonly updateMe = async (req: Request, res: Response) => {
@@ -135,6 +167,7 @@ export class BusinessController {
     }
 
     const updates = parsed.data as Record<string, unknown>;
+    const selectedAgent = await resolveRequestedAgent(req, auth.businessId);
 
     if (parsed.data.slug && parsed.data.slug !== business.slug) {
       const db = getDb();
@@ -149,21 +182,94 @@ export class BusinessController {
       }
     }
 
-    if (parsed.data.allowedDomains) {
-      updates['allowedDomains'] = JSON.stringify(normalizeAllowedDomains(parsed.data.allowedDomains));
+    const businessUpdates: Record<string, unknown> = {};
+    const agentUpdates: Record<string, unknown> = {};
+
+    if (parsed.data.name !== undefined) businessUpdates['name'] = parsed.data.name;
+    if (parsed.data.slug !== undefined) businessUpdates['slug'] = parsed.data.slug;
+    if (parsed.data.description !== undefined) businessUpdates['description'] = parsed.data.description;
+
+    const requestedAgentScopedUpdates =
+      parsed.data.allowedDomains !== undefined
+      || parsed.data.llmProvider !== undefined
+      || parsed.data.llmModel !== undefined
+      || parsed.data.llmApiKey !== undefined
+      || parsed.data.llmBaseUrl !== undefined
+      || parsed.data.primaryColor !== undefined
+      || parsed.data.botName !== undefined
+      || parsed.data.welcomeMessage !== undefined
+      || parsed.data.widgetPosition !== undefined
+      || parsed.data.widgetTheme !== undefined
+      || parsed.data.showAvatar !== undefined
+      || parsed.data.enabledSkills !== undefined;
+
+    if (requestedAgentScopedUpdates && !selectedAgent) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Select an agent to update skills, integrations, API key, and assistant configuration.',
+      });
     }
 
-    const updated = await updateBusiness(business.id, updates);
-    if (!updated) {
+    if (parsed.data.allowedDomains !== undefined) {
+      agentUpdates['allowedDomains'] = JSON.stringify(normalizeAllowedDomains(parsed.data.allowedDomains));
+    }
+    if (parsed.data.llmProvider !== undefined) {
+      agentUpdates['llmProvider'] = parsed.data.llmProvider;
+    }
+    if (parsed.data.llmModel !== undefined) {
+      agentUpdates['llmModel'] = parsed.data.llmModel;
+    }
+    if (parsed.data.llmApiKey !== undefined) {
+      agentUpdates['llmApiKey'] = parsed.data.llmApiKey;
+    }
+    if (parsed.data.llmBaseUrl !== undefined) {
+      agentUpdates['llmBaseUrl'] = parsed.data.llmBaseUrl;
+    }
+    if (parsed.data.primaryColor !== undefined) {
+      agentUpdates['primaryColor'] = parsed.data.primaryColor;
+    }
+    if (parsed.data.botName !== undefined) {
+      agentUpdates['botName'] = parsed.data.botName;
+    }
+    if (parsed.data.welcomeMessage !== undefined) {
+      agentUpdates['welcomeMessage'] = parsed.data.welcomeMessage;
+    }
+    if (parsed.data.widgetPosition !== undefined) {
+      agentUpdates['widgetPosition'] = parsed.data.widgetPosition;
+    }
+    if (parsed.data.widgetTheme !== undefined) {
+      agentUpdates['widgetTheme'] = parsed.data.widgetTheme;
+    }
+    if (parsed.data.showAvatar !== undefined) {
+      agentUpdates['showAvatar'] = parsed.data.showAvatar;
+    }
+
+    const updatedBusiness = Object.keys(businessUpdates).length > 0
+      ? await updateBusiness(business.id, businessUpdates)
+      : business;
+
+    if (!updatedBusiness) {
       return res.status(500).json({ ok: false, error: 'Failed to update business' });
     }
 
-    if (parsed.data.enabledSkills) {
-      await setEnabledSkillsForBusiness(business.id, parsed.data.enabledSkills);
+    if (selectedAgent && Object.keys(agentUpdates).length > 0) {
+      await getDb()
+        .update(agents)
+        .set({ ...agentUpdates, updatedAt: sql`now()` })
+        .where(and(eq(agents.id, selectedAgent.id), eq(agents.businessId, business.id)));
     }
 
-    const withApiKey = await ensureBusinessApiKey(updated);
-    return res.json({ ok: true, data: await toSafeBusinessResponse(withApiKey) });
+    if (parsed.data.enabledSkills && selectedAgent) {
+      await setEnabledSkillsForAgent(selectedAgent.id, parsed.data.enabledSkills);
+    }
+
+    const refreshedBusiness = await getBusinessById(business.id);
+    if (!refreshedBusiness) {
+      return res.status(500).json({ ok: false, error: 'Failed to refresh business after update' });
+    }
+
+    const refreshedAgent = selectedAgent ? await resolveAgentForBusiness(business.id, selectedAgent.id) : null;
+    return res.json({ ok: true, data: await toSafeBusinessResponse(refreshedBusiness, refreshedAgent) });
   };
 
   public readonly rotateApiKey = async (req: Request, res: Response) => {
@@ -172,16 +278,31 @@ export class BusinessController {
 
     const business = await getBusinessById(auth.businessId);
     if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
-    const updated = await updateBusiness(business.id, { agentApiKey: generateBusinessApiKey() });
-    if (!updated?.agentApiKey) {
+
+    const selectedAgent = await resolveRequestedAgent(req, auth.businessId);
+    if (!selectedAgent) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Select an agent before rotating API keys.',
+      });
+    }
+
+    const [updatedAgent] = await getDb()
+      .update(agents)
+      .set({ agentApiKey: generateAgentApiKey(), updatedAt: sql`now()` })
+      .where(and(eq(agents.id, selectedAgent.id), eq(agents.businessId, business.id)))
+      .returning();
+
+    if (!updatedAgent?.agentApiKey) {
       return res.status(500).json({ ok: false, error: 'Failed to rotate API key' });
     }
 
     return res.json({
       ok: true,
       data: {
-        agentApiKey: updated.agentApiKey,
-        businessId: updated.id,
+        agentApiKey: updatedAgent.agentApiKey,
+        businessId: business.id,
+        agentId: updatedAgent.id,
       },
     });
   };
@@ -211,7 +332,15 @@ export class BusinessController {
     const business = await getBusinessById(auth.businessId);
     if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
 
-    await upsertIntegration(business.id, provider, {
+    const selectedAgent = await resolveRequestedAgent(req, auth.businessId);
+    if (!selectedAgent) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Select an agent before updating integrations.',
+      });
+    }
+
+    await upsertIntegrationForAgent(selectedAgent.id, provider, {
       ...(parsed.data.isDefault !== undefined ? { isDefault: parsed.data.isDefault } : {}),
       ...(parsed.data.accessToken !== undefined
         ? { accessToken: parsed.data.accessToken }
@@ -239,9 +368,14 @@ export class BusinessController {
     }
 
     const returnTo = normalizeReturnTo(parsed.data.returnTo);
+    const selectedAgent = await resolveRequestedAgent(req, auth.businessId);
+    if (!selectedAgent) {
+      return res.status(400).json({ ok: false, error: 'Select an agent before connecting integrations.' });
+    }
     const state = signOAuthState({
       provider: 'google',
       businessId: auth.businessId,
+      agentId: selectedAgent.id,
       ...(returnTo ? { returnTo } : {}),
       iat: Date.now(),
       nonce: randomBytes(16).toString('base64url'),
@@ -275,9 +409,14 @@ export class BusinessController {
     }
 
     const returnTo = normalizeReturnTo(parsed.data.returnTo);
+    const selectedAgent = await resolveRequestedAgent(req, auth.businessId);
+    if (!selectedAgent) {
+      return res.status(400).json({ ok: false, error: 'Select an agent before connecting integrations.' });
+    }
     const state = signOAuthState({
       provider: 'zoom',
       businessId: auth.businessId,
+      agentId: selectedAgent.id,
       ...(returnTo ? { returnTo } : {}),
       iat: Date.now(),
       nonce: randomBytes(16).toString('base64url'),
@@ -348,7 +487,16 @@ export class BusinessController {
       return res.redirect(withOAuthStatus(state.returnTo, 'google_business_missing'));
     }
 
-    await upsertIntegration(business.id, 'google', {
+    if (!state.agentId) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'google_agent_required'));
+    }
+
+    const selectedAgent = await resolveAgentForBusiness(business.id, state.agentId);
+    if (!selectedAgent) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'google_agent_missing'));
+    }
+
+    await upsertIntegrationForAgent(selectedAgent.id, 'google', {
       accessToken: payload.access_token,
       ...(payload.refresh_token ? { refreshToken: payload.refresh_token } : {}),
       ...(typeof payload.expires_in === 'number'
@@ -414,7 +562,16 @@ export class BusinessController {
       return res.redirect(withOAuthStatus(state.returnTo, 'zoom_business_missing'));
     }
 
-    await upsertIntegration(business.id, 'zoom', {
+    if (!state.agentId) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'zoom_agent_required'));
+    }
+
+    const selectedAgent = await resolveAgentForBusiness(business.id, state.agentId);
+    if (!selectedAgent) {
+      return res.redirect(withOAuthStatus(state.returnTo, 'zoom_agent_missing'));
+    }
+
+    await upsertIntegrationForAgent(selectedAgent.id, 'zoom', {
       accessToken: payload.access_token,
       ...(payload.refresh_token ? { refreshToken: payload.refresh_token } : {}),
       ...(typeof payload.expires_in === 'number'
@@ -439,14 +596,20 @@ export class BusinessController {
       return res.status(404).json({ ok: false, error: 'Business not found' });
     }
 
-    await disconnectIntegration(business.id, provider);
+    const selectedAgent = await resolveRequestedAgent(req, auth.businessId);
+    if (!selectedAgent) {
+      return res.status(400).json({ ok: false, error: 'Select an agent before disconnecting integrations.' });
+    }
+
+    await disconnectIntegrationForAgent(selectedAgent.id, provider);
 
     const refreshed = await getBusinessById(business.id);
     if (!refreshed) {
       return res.status(500).json({ ok: false, error: 'Failed to refresh business after disconnect' });
     }
 
-    return res.json({ ok: true, data: await toSafeBusinessResponse(refreshed) });
+    const refreshedAgent = selectedAgent ? await resolveAgentForBusiness(business.id, selectedAgent.id) : null;
+    return res.json({ ok: true, data: await toSafeBusinessResponse(refreshed, refreshedAgent) });
   };
 }
 

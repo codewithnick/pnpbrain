@@ -3,13 +3,21 @@ import { z } from 'zod';
 import { getDb } from '@gcfis/db/client';
 import { firecrawlJobs } from '@gcfis/db/schema';
 import { getBusinessById, parseAllowedDomains } from '../lib/business';
+import { resolveAgentForBusiness } from '../lib/agents';
 import { requireApiKey, requireBusinessAuth } from '../middleware/auth';
 import { enqueueCrawlJob } from '../jobs/crawlQueue';
 
 const requestSchema = z.object({
   businessId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
   urls: z.array(z.string().url()).min(1).max(20),
 });
+
+type FirecrawlScope = {
+  businessId: string;
+  agentId: string;
+  allowedDomains: string[];
+};
 
 export class SkillsController {
   public readonly runFirecrawl = async (req: Request, res: Response) => {
@@ -18,11 +26,11 @@ export class SkillsController {
       return res.status(400).json({ ok: false, error: parsed.error.issues.map((i) => i.message).join(', ') });
     }
 
-    const { businessId, urls } = parsed.data;
-    const business = await this.resolveBusinessForFirecrawl(req, res, businessId);
-    if (!business) return;
+    const { businessId, agentId, urls } = parsed.data;
+    const scope = await this.resolveScopeForFirecrawl(req, res, businessId, agentId);
+    if (!scope) return;
 
-    const allowedDomains = parseAllowedDomains(business.allowedDomains);
+    const allowedDomains = scope.allowedDomains;
     const safeUrls = urls.filter((url) => {
       try {
         const hostname = new URL(url).hostname;
@@ -39,7 +47,12 @@ export class SkillsController {
     const db = getDb();
     const [job] = await db
       .insert(firecrawlJobs)
-      .values({ businessId: business.id, urls: JSON.stringify(safeUrls), status: 'queued' })
+      .values({
+        businessId: scope.businessId,
+        agentId: scope.agentId,
+        urls: JSON.stringify(safeUrls),
+        status: 'queued',
+      })
       .returning();
 
     const queued = await enqueueCrawlJob(job!.id);
@@ -53,16 +66,37 @@ export class SkillsController {
     return res.status(202).json({ ok: true, data: { jobId: job!.id, status: 'queued' } });
   };
 
-  private async resolveBusinessForFirecrawl(
+  private async resolveScopeForFirecrawl(
     req: Parameters<typeof requireBusinessAuth>[0],
     res: Parameters<typeof requireBusinessAuth>[1],
-    businessId?: string
-  ) {
+    businessId?: string,
+    payloadAgentId?: string,
+  ): Promise<FirecrawlScope | null> {
     if (req.header('authorization')?.startsWith('Bearer ')) {
       const auth = await requireBusinessAuth(req, res, 'member');
       if (!auth) return null;
 
-      return getBusinessById(auth.businessId);
+      const requestedAgentId =
+        payloadAgentId
+        ?? (typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined)
+        ?? (typeof req.header('x-agent-id') === 'string' ? req.header('x-agent-id') : undefined);
+
+      if (!requestedAgentId) {
+        res.status(400).json({ ok: false, error: 'agentId is required' });
+        return null;
+      }
+
+      const agent = await resolveAgentForBusiness(auth.businessId, requestedAgentId);
+      if (!agent) {
+        res.status(404).json({ ok: false, error: 'Agent not found' });
+        return null;
+      }
+
+      return {
+        businessId: auth.businessId,
+        agentId: agent.id,
+        allowedDomains: parseAllowedDomains(agent.allowedDomains),
+      };
     }
 
     if (!requireApiKey(req, res)) return null;
@@ -72,12 +106,32 @@ export class SkillsController {
       return null;
     }
 
+    const requestedAgentId =
+      payloadAgentId
+      ?? (typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined)
+      ?? (typeof req.header('x-agent-id') === 'string' ? req.header('x-agent-id') : undefined);
+
+    if (!requestedAgentId) {
+      res.status(400).json({ ok: false, error: 'agentId is required' });
+      return null;
+    }
+
     const business = await getBusinessById(businessId);
     if (!business) {
       res.status(400).json({ ok: false, error: 'Business not found' });
       return null;
     }
 
-    return business;
+    const agent = await resolveAgentForBusiness(business.id, requestedAgentId);
+    if (!agent) {
+      res.status(404).json({ ok: false, error: 'Agent not found' });
+      return null;
+    }
+
+    return {
+      businessId: business.id,
+      agentId: agent.id,
+      allowedDomains: parseAllowedDomains(agent.allowedDomains),
+    };
   }
 }

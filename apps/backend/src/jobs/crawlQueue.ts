@@ -6,6 +6,27 @@ const CRAWL_JOB_NAME = 'process';
 let queue: Queue<{ jobId: string }> | null = null;
 let connection: Redis | null = null;
 
+function resolveRedisUrl(): string | null {
+  const explicitRedisUrl = process.env['REDIS_URL'];
+  if (explicitRedisUrl) {
+    return explicitRedisUrl;
+  }
+
+  const upstashRestUrl = process.env['UPSTASH_REDIS_REST_URL'];
+  const upstashRestToken = process.env['UPSTASH_REDIS_REST_TOKEN'];
+  if (!upstashRestUrl || !upstashRestToken) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(upstashRestUrl);
+    return `rediss://:${encodeURIComponent(upstashRestToken)}@${parsed.hostname}:6379`;
+  } catch {
+    console.warn('[crawl-queue] UPSTASH_REDIS_REST_URL is invalid; queue disabled.');
+    return null;
+  }
+}
+
 function isQueueEnabled(): boolean {
   const enabled = process.env['CRAWL_QUEUE_ENABLED'] ?? process.env['FIRECRAWL_QUEUE_ENABLED'];
   return enabled !== 'false';
@@ -15,9 +36,9 @@ async function getQueue(): Promise<Queue<{ jobId: string }> | null> {
   if (!isQueueEnabled()) return null;
   if (queue) return queue;
 
-  const redisUrl = process.env['REDIS_URL'];
+  const redisUrl = resolveRedisUrl();
   if (!redisUrl) {
-    console.warn('[crawl-queue] REDIS_URL is not set; queue disabled.');
+    console.warn('[crawl-queue] REDIS_URL or UPSTASH_REDIS_REST_* is not set; queue disabled.');
     return null;
   }
 

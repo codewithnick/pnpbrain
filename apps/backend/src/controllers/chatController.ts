@@ -10,20 +10,24 @@ import { extractAndSaveMemory } from '@gcfis/agent/memory';
 import { getDb } from '@gcfis/db/client';
 import { conversations, messages } from '@gcfis/db/schema';
 import { asc, eq } from 'drizzle-orm';
-import type { Business } from '@gcfis/db';
+import type { Agent, Business } from '@gcfis/db';
+import type { GraphInput } from '@gcfis/agent/graph';
 import type { StreamEvent } from '@gcfis/types';
 import { sendBadRequest } from '../utils/response';
 import {
-  getBusinessByApiKey,
+  getAgentByApiKey,
+  resolveAgentForBusiness,
+} from '../lib/agents';
+import {
   getBusinessById,
   isAllowedHostname,
   parseAllowedDomains,
   verifyPublicChatToken,
 } from '../lib/business';
 import {
-  getEnabledSkillsForBusiness,
-  getMeetingIntegrationForBusiness,
-  getSupportIntegrationForBusiness,
+  getEnabledSkillsForAgentScope,
+  getMeetingIntegrationForAgentScope,
+  getSupportIntegrationForAgentScope,
 } from '../lib/businessSkills';
 import { isBusinessActive, recordMessageUsage } from '../lib/billing';
 import { shouldEscalateResponse } from '../lib/escalation';
@@ -32,6 +36,7 @@ import { createSupportTicket } from '../lib/supportTickets';
 const ChatRequestSchema = z.object({
   message: z.string().min(1).max(4000),
   threadId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
   publicToken: z.string().min(1).optional(),
 });
 
@@ -56,20 +61,30 @@ function isAllowedOrigin(origin: string | undefined, allowedDomains: string[]): 
 
 async function resolveScopedBusiness(
   conversationBusinessId: string | undefined,
+  conversationAgentId: string | undefined,
   apiKey: string | undefined,
-  publicToken: string | undefined
-): Promise<Business | null> {
-  let business: Business | null;
+  publicToken: string | undefined,
+  requestedAgentId: string | undefined,
+): Promise<{ business: Business; agent: Agent; apiKeyMatched: boolean } | null> {
+  let business: Business | null = null;
+  let agent: Agent | null = null;
+  let apiKeyMatched = false;
 
   if (apiKey) {
-    business = await getBusinessByApiKey(apiKey);
-  } else if (publicToken) {
+    agent = await getAgentByApiKey(apiKey);
+    if (agent) {
+      business = await getBusinessById(agent.businessId);
+      apiKeyMatched = true;
+    }
+  }
+
+  if (!business && publicToken) {
     const tokenPayload = verifyPublicChatToken(publicToken);
     business = tokenPayload ? await getBusinessById(tokenPayload.businessId) : null;
-  } else if (conversationBusinessId) {
+  }
+
+  if (!business && conversationBusinessId) {
     business = await getBusinessById(conversationBusinessId);
-  } else {
-    business = null;
   }
 
   if (!business) {
@@ -80,7 +95,22 @@ async function resolveScopedBusiness(
     return null;
   }
 
-  return business;
+  if (!agent) {
+    agent = await resolveAgentForBusiness(
+      business.id,
+      requestedAgentId ?? conversationAgentId ?? undefined,
+    );
+  }
+
+  if (!agent || agent.businessId !== business.id) {
+    return null;
+  }
+
+  if (conversationAgentId && agent.id !== conversationAgentId) {
+    return null;
+  }
+
+  return { business, agent, apiKeyMatched };
 }
 
 export class ChatController {
@@ -101,13 +131,18 @@ export class ChatController {
     const {
       message,
       threadId: incomingThreadId,
+      agentId: requestedAgentId,
       publicToken,
     } = parsed.data;
 
     const db = getDb();
     const existingConversation = incomingThreadId
       ? await db
-          .select({ id: conversations.id, businessId: conversations.businessId })
+          .select({
+            id: conversations.id,
+            businessId: conversations.businessId,
+            agentId: conversations.agentId,
+          })
           .from(conversations)
           .where(eq(conversations.id, incomingThreadId))
           .limit(1)
@@ -120,31 +155,34 @@ export class ChatController {
 
     // Load business config
     const apiKey = req.header('x-api-key');
-    const business = await resolveScopedBusiness(
+    const runtime = await resolveScopedBusiness(
       existingConversation?.businessId,
+      existingConversation?.agentId ?? undefined,
       apiKey,
-      publicToken
+      publicToken,
+      requestedAgentId,
     );
-    if (!business) {
+    if (!runtime) {
       return sendBadRequest(
         res,
         existingConversation
-          ? 'Business not found'
-          : 'publicToken is required when the backend cannot infer business scope'
+          ? 'Conversation scope is invalid for this agent'
+          : 'publicToken or a valid agent API key is required when the backend cannot infer business scope. If no default agent exists, pass agentId explicitly.'
       );
     }
+    const { business, agent, apiKeyMatched } = runtime;
 
     // Billing gate
     if (!isBusinessActive(business)) {
       return res.status(402).json({
         ok: false,
-        error: 'Free trial expired. Please subscribe to continue using GCFIS.',
-        code: 'TRIAL_EXPIRED',
+        error: 'This business has no remaining credits. Top up credits to continue using GCFIS.',
+        code: 'INSUFFICIENT_CREDITS',
       });
     }
 
-    const allowedDomains = parseAllowedDomains(business.allowedDomains);
-    const hasMatchingApiKey = !!business.agentApiKey && apiKey === business.agentApiKey;
+    const allowedDomains = parseAllowedDomains(agent.allowedDomains);
+    const hasMatchingApiKey = apiKeyMatched;
     const originAllowed = isAllowedOrigin(req.header('origin'), allowedDomains);
 
     if (allowedDomains.length > 0 && !originAllowed && !hasMatchingApiKey) {
@@ -161,12 +199,15 @@ export class ChatController {
       if (existingConversation.businessId !== business.id) {
         return sendBadRequest(res, 'Thread does not belong to this business');
       }
+      if (existingConversation.agentId && existingConversation.agentId !== agent.id) {
+        return sendBadRequest(res, 'Thread does not belong to this agent');
+      }
       conversationId = existingConversation.id;
     } else {
       const sessionId = crypto.randomUUID();
       const [newConversation] = await db
         .insert(conversations)
-        .values({ businessId: business.id, sessionId })
+        .values({ businessId: business.id, agentId: agent.id, sessionId })
         .returning({ id: conversations.id });
       conversationId = newConversation!.id;
     }
@@ -194,9 +235,9 @@ export class ChatController {
       emit({ type: 'step', step: 'retrieving_context' });
 
       const [enabledSkills, meetingIntegration, supportIntegration] = await Promise.all([
-        getEnabledSkillsForBusiness(business.id),
-        getMeetingIntegrationForBusiness(business.id),
-        getSupportIntegrationForBusiness(business.id),
+        getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
+        getMeetingIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
+        getSupportIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
       ]);
 
       const historyRows = await db
@@ -218,10 +259,11 @@ export class ChatController {
           ? conversationHistory.slice(0, -1)
           : conversationHistory;
 
-      const graphInput = {
+      const graphInput: GraphInput = {
         businessId: business.id,
+        agentId: agent.id,
         conversationId,
-        botName: business.botName,
+        botName: agent.botName,
         businessName: business.name,
         allowedDomains,
         userMessage: message,
@@ -237,6 +279,7 @@ export class ChatController {
         }) =>
           createSupportTicket({
             businessId: business.id,
+            agentId: agent.id,
             conversationId,
             reason: payload.reason,
             customerMessage: payload.customerMessage,
@@ -246,10 +289,10 @@ export class ChatController {
               source: 'agent_tool',
             },
           }),
-        ...(business.llmProvider !== null ? { llmProvider: business.llmProvider } : {}),
-        ...(business.llmModel !== null ? { llmModel: business.llmModel } : {}),
-        ...(business.llmApiKey !== null ? { llmApiKey: business.llmApiKey } : {}),
-        ...(business.llmBaseUrl !== null ? { llmBaseUrl: business.llmBaseUrl } : {}),
+        llmProvider: agent.llmProvider,
+        llmModel: agent.llmModel,
+        ...(agent.llmApiKey ? { llmApiKey: agent.llmApiKey } : {}),
+        ...(agent.llmBaseUrl ? { llmBaseUrl: agent.llmBaseUrl } : {}),
       };
 
       const graphStream = runGraph(graphInput);
@@ -283,6 +326,7 @@ export class ChatController {
       if (shouldAutoEscalate) {
         createSupportTicket({
           businessId: business.id,
+          agentId: agent.id,
           conversationId,
           reason: 'agent_unable_to_answer',
           customerMessage: message,
@@ -296,6 +340,7 @@ export class ChatController {
       // Background: extract + save memory (non-blocking)
       extractAndSaveMemory({
         businessId: business.id,
+        agentId: agent.id,
         conversationId,
         userMessage: message,
         assistantResponse: fullAssistantResponse,
@@ -342,7 +387,11 @@ export class ChatController {
 
     const db = getDb();
     const existingConversation = await db
-      .select({ id: conversations.id, businessId: conversations.businessId })
+      .select({
+        id: conversations.id,
+        businessId: conversations.businessId,
+        agentId: conversations.agentId,
+      })
       .from(conversations)
       .where(eq(conversations.id, threadId))
       .limit(1)
@@ -352,23 +401,30 @@ export class ChatController {
       return sendBadRequest(res, 'Thread not found');
     }
 
-    const business = await resolveScopedBusiness(
+    const runtime = await resolveScopedBusiness(
       existingConversation.businessId,
+      existingConversation.agentId ?? undefined,
       req.header('x-api-key'),
-      publicToken
+      publicToken,
+      undefined,
     );
 
-    if (!business) {
+    if (!runtime) {
       return res.status(401).json({ ok: false, error: 'Unauthorized escalation request' });
     }
+    const { business, agent } = runtime;
 
-    const enabledSkills = await getEnabledSkillsForBusiness(business.id);
+    const enabledSkills = await getEnabledSkillsForAgentScope({
+      businessId: business.id,
+      agentId: agent.id,
+    });
     if (!enabledSkills.includes('support_escalation')) {
       return res.status(403).json({ ok: false, error: 'Support escalation skill is disabled' });
     }
 
     const ticket = await createSupportTicket({
       businessId: business.id,
+      agentId: agent.id,
       conversationId: existingConversation.id,
       reason: reason ?? 'manual_customer_escalation',
       customerMessage,

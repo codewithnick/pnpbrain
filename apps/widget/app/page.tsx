@@ -17,7 +17,7 @@ export default function WidgetPreviewPage() {
         config={{
           publicToken: process.env['NEXT_PUBLIC_PUBLIC_CHAT_TOKEN'] ?? 'preview-public-token',
           backendUrl: process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3001',
-          botName: 'GCFIS Assistant',
+          botName: 'PNPBrain Assistant',
           primaryColor: '#6366f1',
           welcomeMessage: 'Hi! How can I help you today?',
           placeholder: 'Type a message…',

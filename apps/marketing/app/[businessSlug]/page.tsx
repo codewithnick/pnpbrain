@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import PublicChat from '@/components/PublicChat';
 
 /**
- * Public chat page — `gcfis.app/<businessSlug>`
+ * Public chat page — `pnpbrain.com/<businessSlug>`
  *
  * Server component:  fetches the business config from the backend, then
  * hands it off to the <PublicChat> client component for the interactive chat.

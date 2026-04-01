@@ -3,12 +3,14 @@
  */
 import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { businesses } from './businesses';
+import { agents } from './agents';
 
 export const firecrawlJobs = pgTable('firecrawl_jobs', {
   id: uuid('id').primaryKey().defaultRandom(),
   businessId: uuid('business_id')
     .notNull()
     .references(() => businesses.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   status: text('status', {
     enum: ['queued', 'running', 'done', 'error'],
   })

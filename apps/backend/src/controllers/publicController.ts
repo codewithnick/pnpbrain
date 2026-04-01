@@ -6,6 +6,7 @@ import {
   isAllowedHostname,
   parseAllowedDomains,
 } from '../lib/business';
+import { resolveAgentForBusiness } from '../lib/agents';
 
 const widgetSessionSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]+$/),
@@ -35,18 +36,28 @@ export class PublicController {
       return res.status(404).json({ ok: false, error: 'Business not found' });
     }
 
+    const requestedAgentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined;
+    const agent = await resolveAgentForBusiness(business.id, requestedAgentId);
+    if (!agent) {
+      return res.status(409).json({
+        ok: false,
+        error: 'No default agent is configured for this business. Create an agent and mark one as default.',
+      });
+    }
+
     return res.json({
       ok: true,
       data: {
         id: business.id,
         name: business.name,
         slug: business.slug,
-        botName: business.botName,
-        welcomeMessage: business.welcomeMessage,
-        primaryColor: business.primaryColor,
-        widgetPosition: business.widgetPosition,
-        widgetTheme: business.widgetTheme,
-        showAvatar: business.showAvatar,
+        agentId: agent.id,
+        botName: agent.botName,
+        welcomeMessage: agent.welcomeMessage,
+        primaryColor: agent.primaryColor,
+        widgetPosition: agent.widgetPosition,
+        widgetTheme: agent.widgetTheme,
+        showAvatar: agent.showAvatar,
         publicChatToken: generatePublicChatToken(business),
       },
     });
@@ -64,7 +75,16 @@ export class PublicController {
       return res.status(404).json({ ok: false, error: 'Business not found' });
     }
 
-    const allowedDomains = parseAllowedDomains(business.allowedDomains);
+    const requestedAgentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined;
+    const agent = await resolveAgentForBusiness(business.id, requestedAgentId);
+    if (!agent) {
+      return res.status(409).json({
+        ok: false,
+        error: 'No default agent is configured for this business. Create an agent and mark one as default.',
+      });
+    }
+
+    const allowedDomains = parseAllowedDomains(agent.allowedDomains);
     const originHostname = extractOriginHostname(req.header('origin'));
     if (allowedDomains.length > 0 && (!originHostname || !isAllowedHostname(originHostname, allowedDomains))) {
       return res.status(401).json({ ok: false, error: 'Origin is not allowed for this business' });
@@ -74,12 +94,13 @@ export class PublicController {
       ok: true,
       data: {
         slug: business.slug,
-        botName: business.botName,
-        welcomeMessage: business.welcomeMessage,
-        primaryColor: business.primaryColor,
-        widgetTheme: business.widgetTheme,
-        widgetPosition: business.widgetPosition,
-        showAvatar: business.showAvatar,
+        agentId: agent.id,
+        botName: agent.botName,
+        welcomeMessage: agent.welcomeMessage,
+        primaryColor: agent.primaryColor,
+        widgetTheme: agent.widgetTheme,
+        widgetPosition: agent.widgetPosition,
+        showAvatar: agent.showAvatar,
         publicChatToken: generatePublicChatToken(business),
       },
     });

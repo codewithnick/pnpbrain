@@ -1,19 +1,19 @@
 /**
- * GCFIS Widget Embed Script
+ * PNPBrain Widget Embed Script
  *
  * This file is built into a standalone UMD bundle (gcfis-widget.js) by
  * `pnpm build:embed`.  Business owners drop a single <script> tag on their site:
  *
  *   <script
- *     src="https://cdn.gcfis.com/widget/gcfis-widget.js"
+ *     src="https://cdn.pnpbrain.com/widget/gcfis-widget.js"
  *     data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
- *     data-backend-url="https://api.gcfis.com"
+ *     data-backend-url="https://api.pnpbrain.com"
  *     data-bot-name="My Assistant"
  *     data-primary-color="#6366f1"
  *     data-welcome-message="Hi! How can I help?"
  *   ></script>
  *
- * The script mounts a shadow-DOM React root so GCFIS styles never conflict
+ * The script mounts a shadow-DOM React root so PNPBrain styles never conflict
  * with the host page's CSS.
  */
 
@@ -24,6 +24,7 @@ import type { WidgetConfig } from '@gcfis/types';
 
 declare global {
   interface Window {
+    PNPBRAIN_CONFIG?: Partial<WidgetConfig>;
     GCFIS_CONFIG?: Partial<WidgetConfig>;
   }
 }
@@ -34,12 +35,12 @@ function buildConfigFromDataset(
 ): WidgetConfig {
   const publicToken = dataset['publicToken'] ?? fallback.publicToken;
   if (!publicToken) {
-    throw new Error('[GCFIS] data-public-token attribute is required. Widget not mounted.');
+    throw new Error('[PNPBrain] data-public-token attribute is required. Widget not mounted.');
   }
 
   return {
     publicToken,
-    backendUrl: dataset['backendUrl'] ?? fallback.backendUrl ?? 'https://api.gcfis.com',
+    backendUrl: dataset['backendUrl'] ?? fallback.backendUrl ?? 'https://api.pnpbrain.com',
     botName: dataset['botName'] ?? fallback.botName ?? 'Assistant',
     primaryColor: dataset['primaryColor'] ?? fallback.primaryColor ?? '#6366f1',
     welcomeMessage:
@@ -49,7 +50,11 @@ function buildConfigFromDataset(
 }
 
 (function gcfisEmbed() {
-  const fallbackConfig = window.GCFIS_CONFIG ?? {};
+  const globalConfig = globalThis as typeof globalThis & {
+    PNPBRAIN_CONFIG?: Partial<WidgetConfig>;
+    GCFIS_CONFIG?: Partial<WidgetConfig>;
+  };
+  const fallbackConfig = globalConfig.PNPBRAIN_CONFIG ?? globalConfig.GCFIS_CONFIG ?? {};
 
   const mountNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-gcfis-mount="1"]'));
   if (mountNodes.length > 0) {
@@ -58,7 +63,7 @@ function buildConfigFromDataset(
       try {
         config = buildConfigFromDataset(mountNode.dataset, fallbackConfig);
       } catch (error) {
-        console.error(error instanceof Error ? error.message : '[GCFIS] Invalid widget config. Widget not mounted.');
+        console.error(error instanceof Error ? error.message : '[PNPBrain] Invalid widget config. Widget not mounted.');
         continue;
       }
 
@@ -74,7 +79,7 @@ function buildConfigFromDataset(
     document.querySelector('script[data-public-token]');
 
   if (!scriptTag) {
-    console.error('[GCFIS] Could not find embed script tag. Widget not mounted.');
+    console.error('[PNPBrain] Could not find embed script tag. Widget not mounted.');
     return;
   }
 
@@ -82,7 +87,7 @@ function buildConfigFromDataset(
   try {
     config = buildConfigFromDataset(scriptTag.dataset, fallbackConfig);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : '[GCFIS] Invalid widget config. Widget not mounted.');
+    console.error(error instanceof Error ? error.message : '[PNPBrain] Invalid widget config. Widget not mounted.');
     return;
   }
 
@@ -97,7 +102,7 @@ function buildConfigFromDataset(
   // Inject Tailwind CSS (built at embed build time)
   const styleEl = document.createElement('style');
   // Styles will be injected by the build script (esbuild + postcss plugin)
-  styleEl.textContent = '/* GCFIS styles injected at build time */';
+  styleEl.textContent = '/* PNPBrain styles injected at build time */';
   shadow.appendChild(styleEl);
 
   const mountPoint = document.createElement('div');

@@ -5,8 +5,10 @@
  * Per-business language model configuration.
  */
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { fetchBackend } from '@/lib/supabase';
+import { fetchAgents, resolveActiveAgent } from '@/lib/agents';
 
 const PROVIDERS = [
   { value: 'ollama',     label: 'Ollama', description: 'Self-hosted — runs on your own machine or server. Free.' },
@@ -24,6 +26,8 @@ const fieldCls =
   'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
 export default function LlmSettingsPage() {
+  const [agentId, setAgentId]       = useState<string | null>(null);
+  const [hasActiveAgent, setHasActiveAgent] = useState(true);
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(false);
   const [success, setSuccess]     = useState(false);
@@ -37,16 +41,26 @@ export default function LlmSettingsPage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetchBackend('/api/business/me');
-      if (!res.ok) { setLoading(false); return; }
-      const json = (await res.json()) as { data?: Record<string, unknown> };
-      const d = json.data;
-      if (!d) { setLoading(false); return; }
-      if (typeof d.llmProvider === 'string') setProvider(d.llmProvider);
-      if (typeof d.llmModel    === 'string') setModel(d.llmModel);
-      if (typeof d.llmBaseUrl  === 'string') setBaseUrl(d.llmBaseUrl ?? '');
-      if (typeof d.hasLlmApiKey === 'boolean') setHasKey(d.hasLlmApiKey);
-      setLoading(false);
+      try {
+        const agents = await fetchAgents();
+        const active = resolveActiveAgent(agents);
+        if (!active) {
+          setHasActiveAgent(false);
+          setLoading(false);
+          return;
+        }
+
+        setHasActiveAgent(true);
+        setAgentId(active.id);
+        if (typeof active.llmProvider === 'string') setProvider(active.llmProvider);
+        if (typeof active.llmModel === 'string') setModel(active.llmModel);
+        if (typeof active.llmBaseUrl === 'string') setBaseUrl(active.llmBaseUrl ?? '');
+        setHasKey(Boolean(active.llmApiKey));
+        setLoading(false);
+      } catch {
+        setError('Failed to load agent configuration.');
+        setLoading(false);
+      }
     })();
   }, []);
 
@@ -60,8 +74,14 @@ export default function LlmSettingsPage() {
     if (provider === 'ollama') body.llmBaseUrl = baseUrl || null;
     if ((provider === 'openai' || provider === 'anthropic') && apiKey) body.llmApiKey = apiKey;
 
-    const res = await fetchBackend('/api/business/me', {
-      method: 'PUT',
+    if (!agentId) {
+      setSaving(false);
+      setError('No active agent selected.');
+      return;
+    }
+
+    const res = await fetchBackend(`/api/agents/${agentId}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
@@ -79,6 +99,20 @@ export default function LlmSettingsPage() {
   }
 
   if (loading) return <div className="text-sm text-gray-400 dark:text-slate-500 py-8">Loading…</div>;
+
+  if (!hasActiveAgent) {
+    return (
+      <div className="max-w-xl rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-900">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">No active agent selected</h2>
+        <p className="mt-2 text-sm text-gray-600 dark:text-slate-300">
+          Create an agent first, then select it to configure LLM settings.
+        </p>
+        <Link href="/dashboard/agents" className="mt-4 inline-flex rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          Go to Agents
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSave} className="space-y-6 max-w-xl">

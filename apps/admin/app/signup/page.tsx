@@ -232,7 +232,7 @@ export default function SignupPage() {
                 </label>
                 <div className="flex items-center gap-0 rounded-lg border border-gray-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-100 transition overflow-hidden">
                   <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-300 shrink-0 select-none">
-                    gcfis.app/
+                    pnpbrain.com/
                   </span>
                   <input
                     id="slug"

@@ -12,7 +12,7 @@ const features = [
     icon: '🧠',
     title: 'RAG-Powered Knowledge Base',
     description:
-      'Upload documents, paste URLs or run Firecrawl to crawl your site. GCFIS chunks, embeds, and retrieves the right context for every answer.',
+      'Upload documents, paste URLs or run Firecrawl to crawl your site. PNPBrain chunks, embeds, and retrieves the right context for every answer.',
   },
   {
     icon: '💾',

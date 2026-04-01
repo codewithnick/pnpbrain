@@ -2,7 +2,7 @@
   "name": "gcfis",
   "version": "0.0.1",
   "private": true,
-  "description": "GCFIS – General Customer Facing Intelligent System monorepo",
+  "description": "PNPBrain – Plug and Play Brain monorepo",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",

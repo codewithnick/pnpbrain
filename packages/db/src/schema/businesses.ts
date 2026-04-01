@@ -15,36 +15,7 @@ export const businesses = pgTable('businesses', {
   /** Short description used to give the agent business context */
   description: text('description').notNull().default(''),
   /** Supabase Auth user ID of the owner */
-  ownerUserId: text('owner_user_id').notNull(),
-  /**
-   * Comma-separated list of allowed domains for Firecrawl.
-   * Stored as JSON array string for simplicity; parsed at runtime.
-   */
-  allowedDomains: text('allowed_domains').notNull().default('[]'),
-  // ── LLM configuration (per-business overrides) ─────────────────────────
-  /** LLM provider: 'ollama' | 'openai' | 'anthropic'. Falls back to server env. */
-  llmProvider: text('llm_provider').notNull().default('ollama'),
-  /** Model tag, e.g. 'llama3.1:8b', 'gpt-4o-mini', 'claude-3-5-haiku-20241022' */
-  llmModel: text('llm_model').notNull().default('llama3.1:8b'),
-  /**
-   * API key for cloud providers — stored encrypted at rest (Supabase column encryption).
-   * Null when using Ollama.
-   */
-  llmApiKey: text('llm_api_key'),
-  /** Base URL for self-hosted Ollama; null to use server default. */
-  llmBaseUrl: text('llm_base_url'),
-  /** Primary colour for the widget */
-  primaryColor: text('primary_color').notNull().default('#6366f1'),
-  botName: text('bot_name').notNull().default('GCFIS Assistant'),
-  welcomeMessage: text('welcome_message').notNull().default('Hi! How can I help you today?'),
-  /** Widget position on the page */
-  widgetPosition: text('widget_position').notNull().default('bottom-right'),
-  /** 'light' | 'dark' */
-  widgetTheme: text('widget_theme').notNull().default('light'),
-  /** Show agent avatar in the chat window */
-  showAvatar: boolean('show_avatar').notNull().default(true),
-  /** Business-scoped API key for external chat integrations. */
-  agentApiKey: text('agent_api_key').unique(),
+  ownerUserId: text('owner_user_id').notNull().unique(),
   // ── Billing ──────────────────────────────────────────────────────────────
   /**
    * When the 7-day free trial expires.
@@ -78,6 +49,14 @@ export const businesses = pgTable('businesses', {
   currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
   /** Running total of AI messages processed (for display / analytics). */
   messagesUsedTotal: integer('messages_used_total').notNull().default(0),
+  /** Current business-wide spendable credits. */
+  creditBalance: integer('credit_balance').notNull().default(100),
+  /** Credits granted at signup (default free tier allocation). */
+  signupCreditsGranted: integer('signup_credits_granted').notNull().default(100),
+  /** Lifetime total credits purchased via top-ups. */
+  creditsPurchasedTotal: integer('credits_purchased_total').notNull().default(0),
+  /** Lifetime credits consumed by API usage. */
+  creditsUsedTotal: integer('credits_used_total').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

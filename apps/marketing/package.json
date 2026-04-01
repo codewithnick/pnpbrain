@@ -2,7 +2,7 @@
   "name": "marketing",
   "version": "0.0.1",
   "private": true,
-  "description": "GCFIS public marketing website — gcfis.com",
+  "description": "PNPBrain public marketing website — pnpbrain.com",
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",

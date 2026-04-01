@@ -3,12 +3,14 @@
  */
 import { jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { businesses } from './businesses';
+import { agents } from './agents';
 
 export const conversations = pgTable('conversations', {
   id: uuid('id').primaryKey().defaultRandom(),
   businessId: uuid('business_id')
     .notNull()
     .references(() => businesses.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   /** Anonymous end-user session ID (set by widget) */
   sessionId: text('session_id').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

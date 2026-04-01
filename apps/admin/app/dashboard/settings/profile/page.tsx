@@ -7,9 +7,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchBackend, getBackendUrl } from '@/lib/supabase';
+import { fetchAgents, resolveActiveAgent } from '@/lib/agents';
 
 function slugify(v: string) {
-  return v.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').slice(0, 40);
+  return v
+    .toLowerCase()
+    .trim()
+    .replaceAll(/[^a-z0-9\s-]/g, '')
+    .replaceAll(/\s+/g, '-')
+    .replaceAll(/-+/g, '-')
+    .slice(0, 40);
 }
 
 interface BusinessMeResponse {
@@ -32,8 +39,8 @@ export default function ProfileSettingsPage() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [hasActiveAgent, setHasActiveAgent] = useState(true);
 
-  const [businessId, setBusinessId] = useState('');
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [originalSlug, setOriginalSlug] = useState('');
@@ -43,12 +50,15 @@ export default function ProfileSettingsPage() {
 
   useEffect(() => {
     (async () => {
+      const agents = await fetchAgents().catch(() => []);
+      const active = resolveActiveAgent(agents);
+      setHasActiveAgent(Boolean(active));
+
       const res = await fetchBackend('/api/business/me');
       const json = (await res.json().catch(() => ({}))) as BusinessMeResponse;
       const d = json.data;
 
       if (res.ok && d) {
-        if (typeof d.id === 'string') setBusinessId(d.id);
         if (typeof d.name === 'string') setName(d.name);
         if (typeof d.slug === 'string') {
           setSlug(d.slug);
@@ -65,7 +75,7 @@ export default function ProfileSettingsPage() {
 
   const integrationCurl = useMemo(() => {
     if (!agentApiKey) return '';
-    return `curl -X POST "${getBackendUrl()}/api/agent/chat" \\
+    return String.raw`curl -X POST "${getBackendUrl()}/api/agent/chat" \
   -H "Content-Type: application/json" \\
   -H "x-api-key: ${agentApiKey}" \\
   -d '{"message":"Hello from our app"}'`;
@@ -78,7 +88,7 @@ export default function ProfileSettingsPage() {
     return JSON.stringify(
       {
         mcpServers: {
-          'gcfis-agent': {
+          'pnpbrain-agent': {
             command: 'npx',
             args: ['mcp-remote', mcpEndpoint],
             env: { MCP_API_KEY: agentApiKey },
@@ -90,10 +100,39 @@ export default function ProfileSettingsPage() {
     );
   }, [agentApiKey, mcpEndpoint]);
 
+  const vscodeMcpConfig = useMemo(() => {
+    const vscodeApiKey = agentApiKey || '${input:pnpbrain-api-key}';
+
+    return JSON.stringify(
+      {
+        inputs: [
+          {
+            type: 'promptString',
+            id: 'pnpbrain-api-key',
+            description: 'PNPBrain MCP API key',
+            password: true,
+          },
+        ],
+        servers: {
+          gcfisAgent: {
+            type: 'http',
+            url: mcpEndpoint,
+            headers: {
+              'x-api-key': vscodeApiKey,
+            },
+          },
+        },
+      },
+      null,
+      2
+    );
+  }, [agentApiKey, mcpEndpoint]);
+
   const mcpCurl = useMemo(() => {
     if (!agentApiKey) return '';
-    return `curl -X POST "${mcpEndpoint}" \\
+    return String.raw`curl -X POST "${mcpEndpoint}" \
   -H "Content-Type: application/json" \\
+  -H "Accept: application/json, text/event-stream" \\
   -H "x-api-key: ${agentApiKey}" \\
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'`;
   }, [agentApiKey, mcpEndpoint]);
@@ -106,6 +145,11 @@ export default function ProfileSettingsPage() {
   }
 
   async function rotateApiKey() {
+    if (!hasActiveAgent) {
+      setError('Select an active agent before rotating an API key.');
+      return;
+    }
+
     setError('');
     setRotatingKey(true);
 
@@ -123,7 +167,7 @@ export default function ProfileSettingsPage() {
     setShowApiKey(true);
   }
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleSave(e: Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0]) {
     e.preventDefault();
     setError('');
     setSuccess(false);
@@ -174,7 +218,7 @@ export default function ProfileSettingsPage() {
       <Card title="Public chat URL" description="Your customers will visit this URL to chat with your assistant.">
         <div className="flex items-center gap-0 rounded-lg border border-gray-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-100 transition overflow-hidden dark:border-slate-700">
           <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-300 shrink-0 select-none dark:bg-slate-900 dark:border-slate-700 dark:text-slate-500">
-            gcfis.app/
+            pnpbrain.com/
           </span>
           <input
             type="text"
@@ -225,6 +269,11 @@ export default function ProfileSettingsPage() {
       </Card>
 
       <Card title="Integration API key" description="Use this key to integrate your agent into external systems.">
+        {!hasActiveAgent && (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+            No active agent selected. Create/select an agent in Agents before generating an API key.
+          </div>
+        )}
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <input
@@ -249,7 +298,7 @@ export default function ProfileSettingsPage() {
             </button>
             <button
               type="button"
-              disabled={rotatingKey}
+              disabled={rotatingKey || !hasActiveAgent}
               onClick={rotateApiKey}
               className="rounded-lg bg-brand-500 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
             >
@@ -295,8 +344,9 @@ export default function ProfileSettingsPage() {
 
           {/* Auth */}
           <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
-            <span className="font-medium text-slate-200">Authentication: </span>
+            <span className="font-medium text-slate-200">Authentication:</span>{' '}
             add an <code className="text-indigo-400">x-api-key: &lt;your-api-key&gt;</code> header to every request.
+            MCP HTTP clients should also send <code className="text-indigo-400">Accept: application/json, text/event-stream</code>.
           </div>
 
           {/* Claude Desktop */}
@@ -305,6 +355,25 @@ export default function ProfileSettingsPage() {
             <pre className="overflow-x-auto text-xs text-slate-200 whitespace-pre-wrap">
               <code>{claudeDesktopConfig}</code>
             </pre>
+          </div>
+
+          {/* VS Code */}
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+            <p className="mb-2 text-xs font-medium text-slate-300">VS Code — <code>.vscode/mcp.json</code> or user profile <code>mcp.json</code></p>
+            <pre className="overflow-x-auto text-xs text-slate-200 whitespace-pre-wrap">
+              <code>{vscodeMcpConfig}</code>
+            </pre>
+            <p className="mt-2 text-xs text-slate-400">
+              This snippet includes your current API key directly. Replace it with <code>${'{input:pnpbrain-api-key}'}</code> if you prefer VS Code to prompt for the key at runtime.
+            </p>
+          </div>
+
+          {/* VS Code agent */}
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+            <p className="mb-2 text-xs font-medium text-slate-300">VS Code custom agent</p>
+            <p className="text-xs text-slate-400">
+              Add a workspace agent at <code>.github/agents/gcfis.agent.md</code> and reference the <code>gcfisAgent</code> MCP server in its tool list to give Copilot a dedicated PNPBrain chat mode.
+            </p>
           </div>
 
           {/* Test with cURL */}
@@ -352,7 +421,11 @@ export default function ProfileSettingsPage() {
 const fieldCls =
   'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 transition dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
-function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function Card({
+  title,
+  description,
+  children,
+}: Readonly<{ title: string; description?: string; children: React.ReactNode }>) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">{title}</h3>
@@ -362,7 +435,7 @@ function Card({ title, description, children }: { title: string; description?: s
   );
 }
 
-function Alert({ type, message }: { type: 'error' | 'success'; message: string }) {
+function Alert({ type, message }: Readonly<{ type: 'error' | 'success'; message: string }>) {
   return (
     <div
       className={`rounded-lg border px-4 py-3 text-sm ${

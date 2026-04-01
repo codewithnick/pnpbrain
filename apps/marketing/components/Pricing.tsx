@@ -19,7 +19,7 @@ const plans = [
     name: 'Starter',
     price: '$0',
     period: '/ month',
-    description: 'Perfect for trying GCFIS on one site.',
+    description: 'Perfect for trying PNPBrain on one site.',
     features: [
       '1 website',
       '100 conversations / month',
@@ -129,7 +129,7 @@ export default function Pricing() {
 
                   <Button
                     component={Link}
-                    href={plan.name === 'Enterprise' ? 'mailto:hello@gcfis.com' : `${adminBaseUrl}/signup`}
+                    href={plan.name === 'Enterprise' ? 'mailto:hello@pnpbrain.com' : `${adminBaseUrl}/signup`}
                     variant={plan.highlighted ? 'outlined' : 'contained'}
                     color={plan.highlighted ? 'inherit' : 'primary'}
                     sx={{

@@ -15,8 +15,8 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: 'GCFIS Admin',
-  description: 'GCFIS business owner dashboard',
+  title: 'PNPBrain Admin',
+  description: 'PNPBrain business owner dashboard',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

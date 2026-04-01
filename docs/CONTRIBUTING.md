@@ -1,4 +1,4 @@
-# GCFIS — Development & Contribution Guide
+# PNPBrain — Development & Contribution Guide
 
 ## Prerequisites
 
@@ -74,7 +74,7 @@ OLLAMA_MODEL=<model>
 SUPABASE_URL=...
 SUPABASE_ANON_KEY=...
 FIRECRAWL_API_KEY=...
-LLM_PROVIDER=ollama   # switch to 'openai' | 'anthropic' for production
+LLM_PROVIDER=ollama   # switch to 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'huggingface' for production
 ```
 
 ---

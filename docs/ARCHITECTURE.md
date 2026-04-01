@@ -1,15 +1,15 @@
-# GCFIS — Architecture
+# PNPBrain — Architecture
 
 ## High-Level Overview
 
-GCFIS is a monorepo (Turborepo) composed of four deployable apps and a set of shared packages. The backend owns all agent logic; frontends are thin clients.
+PNPBrain is a monorepo (Turborepo) composed of four deployable apps and a set of shared packages. The backend owns all agent logic; frontends are thin clients.
 
 ```
 apps/
   backend/      # Agent execution, REST + streaming API
   admin/        # Owner-facing dashboard (KB, skills, analytics)
   widget/       # Embeddable chat widget (script tag / React)
-  marketing/    # Public-facing GCFIS.com site
+  marketing/    # Public-facing pnpbrain.com site
 
 packages/
   agent/        # LangGraph graph, nodes, checkpointing
@@ -72,7 +72,7 @@ flowchart TD
 - Chat UI with typing indicators and streaming responses, fully brandable.
 
 ### `apps/marketing`
-- Public face of GCFIS.com.
+- Public face of pnpbrain.com.
 - Sections: Hero, Problem/Solution, How It Works, Pricing, Docs, Demo/Signup CTA.
 
 ### `packages/agent`

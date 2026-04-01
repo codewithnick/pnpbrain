@@ -21,9 +21,12 @@
     "@gcfis/db": "workspace:*",
     "@gcfis/tools": "workspace:*",
     "@gcfis/types": "workspace:*",
+    "@langchain/anthropic": "^0.3.34",
     "@langchain/core": "^0.3.37",
+    "@langchain/google-genai": "^0.2.18",
     "@langchain/langgraph": "^0.2.40",
     "@langchain/ollama": "^0.1.5",
+    "@langchain/openai": "^0.6.17",
     "drizzle-orm": "^0.38.3",
     "langchain": "^0.3.19",
     "zod": "^3.24.1"

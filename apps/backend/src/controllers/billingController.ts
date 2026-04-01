@@ -13,6 +13,7 @@ import {
   createPortalSession,
   getBillingStatus,
   syncStripeSubscription,
+  topUpBusinessCredits,
 } from '../lib/billing';
 
 export class BillingController {
@@ -52,6 +53,33 @@ export class BillingController {
       const message = err instanceof Error ? err.message : String(err);
       console.error('[billing/checkout]', message);
       return res.status(500).json({ ok: false, error: 'Failed to create checkout session' });
+    }
+  };
+
+  public readonly topUp = async (req: Request, res: Response) => {
+    const auth = await requireBusinessAuth(req, res, 'owner');
+    if (!auth) return;
+
+    const credits = Number(req.body?.['credits']);
+    if (!Number.isFinite(credits) || credits <= 0 || !Number.isInteger(credits)) {
+      return res.status(400).json({ ok: false, error: 'credits must be a positive integer' });
+    }
+
+    try {
+      const data = await topUpBusinessCredits({
+        businessId: auth.businessId,
+        amount: credits,
+        createdByUserId: auth.userId,
+        metadata: {
+          source: 'manual_top_up',
+        },
+      });
+
+      return res.status(201).json({ ok: true, data });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[billing/top-up]', message);
+      return res.status(500).json({ ok: false, error: 'Failed to top up credits' });
     }
   };
 

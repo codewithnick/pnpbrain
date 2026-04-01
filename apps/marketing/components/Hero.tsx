@@ -61,7 +61,7 @@ export default function Hero() {
         </Typography>
 
         <Typography sx={{ mt: 3, fontSize: { xs: '1rem', md: '1.2rem' }, color: 'text.secondary' }}>
-          GCFIS embeds a RAG-powered AI chat widget on your website in minutes. It learns from your knowledge base,
+          PNPBrain embeds a RAG-powered AI chat widget on your website in minutes. It learns from your knowledge base,
           remembers customers, and handles questions 24/7.
         </Typography>
 
@@ -86,11 +86,11 @@ export default function Hero() {
         <Paper sx={{ borderRadius: 4, overflow: 'hidden', boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.4, bgcolor: 'primary.main', color: '#ecfeff' }}>
             <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: 'rgba(236, 254, 255, 0.25)', display: 'grid', placeItems: 'center', fontWeight: 800 }}>
-              G
+              P
             </Box>
             <Box>
               <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                GCFIS Assistant
+                PNPBrain Assistant
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.8 }}>
                 Online

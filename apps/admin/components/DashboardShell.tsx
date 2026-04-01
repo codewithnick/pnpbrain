@@ -39,7 +39,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   }, []);
 
   const publicUrl = slug
-    ? `${process.env['NEXT_PUBLIC_MARKETING_URL'] ?? 'https://gcfis.app'}/${slug}`
+    ? `${process.env['NEXT_PUBLIC_MARKETING_URL'] ?? 'https://pnpbrain.com'}/${slug}`
     : null;
 
   async function copyUrl() {

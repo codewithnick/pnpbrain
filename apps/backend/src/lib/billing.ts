@@ -9,8 +9,8 @@
 
 import Stripe from 'stripe';
 import { getDb } from '@gcfis/db/client';
-import { businesses } from '@gcfis/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { businessCreditLedger, businesses } from '@gcfis/db/schema';
+import { eq, gte, sql } from 'drizzle-orm';
 import type { Business } from '@gcfis/db';
 
 // ─── Stripe client ────────────────────────────────────────────────────────────
@@ -28,13 +28,7 @@ function getStripe(): Stripe {
  * True during an active trial or when subscribed (active / past_due grace).
  */
 export function isBusinessActive(business: Business): boolean {
-  if (business.subscriptionStatus === 'trialing') {
-    return new Date(business.trialEndsAt) > new Date();
-  }
-  return (
-    business.subscriptionStatus === 'active' ||
-    business.subscriptionStatus === 'past_due'
-  );
+  return business.creditBalance > 0;
 }
 
 /**
@@ -57,6 +51,12 @@ export function getBillingStatus(business: Business) {
     trialDaysRemaining,
     currentPeriodEnd: business.currentPeriodEnd?.toISOString() ?? null,
     messagesUsedTotal: business.messagesUsedTotal,
+    creditBalance: business.creditBalance,
+    signupCreditsGranted: business.signupCreditsGranted,
+    creditsPurchasedTotal: business.creditsPurchasedTotal,
+    creditsUsedTotal: business.creditsUsedTotal,
+    includedApiCredits: business.signupCreditsGranted + business.creditsPurchasedTotal,
+    remainingApiCredits: business.creditBalance,
     hasStripeCustomer: Boolean(business.stripeCustomerId),
   };
 }
@@ -158,39 +158,72 @@ export async function createPortalSession(
  * Designed to be called fire-and-forget (non-blocking from chat route).
  */
 export async function recordMessageUsage(business: Business): Promise<void> {
-  // Atomically increment the counter
-  await getDb()
+  const db = getDb();
+  const [updated] = await db
     .update(businesses)
     .set({
       messagesUsedTotal: sql`${businesses.messagesUsedTotal} + 1`,
+      creditsUsedTotal: sql`${businesses.creditsUsedTotal} + 1`,
+      creditBalance: sql`${businesses.creditBalance} - 1`,
       updatedAt: sql`now()`,
     })
-    .where(eq(businesses.id, business.id));
+    .where(gte(businesses.creditBalance, 1))
+    .returning({
+      businessId: businesses.id,
+      balanceAfter: businesses.creditBalance,
+      creditsUsedTotal: businesses.creditsUsedTotal,
+    });
 
-  // Report to Stripe metered billing (only when subscription is active)
-  if (business.stripeSubscriptionItemId) {
-    try {
-      const stripe = getStripe();
-      const usageApi = (stripe as unknown as {
-        subscriptionItems?: {
-          createUsageRecord?: (
-            subscriptionItemId: string,
-            usage: { quantity: number; action: 'increment' }
-          ) => Promise<unknown>;
-        };
-      }).subscriptionItems?.createUsageRecord;
-
-      if (usageApi) {
-        await usageApi(business.stripeSubscriptionItemId, {
-          quantity: 1,
-          action: 'increment',
-        });
-      }
-    } catch (err) {
-      // Log but don't fail — usage can be reconciled later
-      console.error('[billing] Stripe usage report failed:', err);
-    }
+  if (!updated) {
+    throw new Error('Insufficient credits');
   }
+
+  await db.insert(businessCreditLedger).values({
+    businessId: updated.businessId,
+    amount: -1,
+    balanceAfter: updated.balanceAfter,
+    reason: 'usage_debit',
+    metadata: {
+      source: 'recordMessageUsage',
+      creditsUsedTotal: updated.creditsUsedTotal,
+    },
+  });
+}
+
+export async function topUpBusinessCredits(input: {
+  businessId: string;
+  amount: number;
+  createdByUserId: string;
+  metadata?: Record<string, unknown>;
+}): Promise<{ creditBalance: number; creditsPurchasedTotal: number }> {
+  const db = getDb();
+  const [updated] = await db
+    .update(businesses)
+    .set({
+      creditBalance: sql`${businesses.creditBalance} + ${input.amount}`,
+      creditsPurchasedTotal: sql`${businesses.creditsPurchasedTotal} + ${input.amount}`,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(businesses.id, input.businessId))
+    .returning({
+      creditBalance: businesses.creditBalance,
+      creditsPurchasedTotal: businesses.creditsPurchasedTotal,
+    });
+
+  if (!updated) {
+    throw new Error('Business not found');
+  }
+
+  await db.insert(businessCreditLedger).values({
+    businessId: input.businessId,
+    amount: input.amount,
+    balanceAfter: updated.creditBalance,
+    reason: 'top_up',
+    createdByUserId: input.createdByUserId,
+    metadata: input.metadata,
+  });
+
+  return updated;
 }
 
 // ─── Webhook helpers ──────────────────────────────────────────────────────────

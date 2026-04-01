@@ -5,10 +5,11 @@
  * so any MCP-compatible client (Claude Desktop, Cursor, Copilot, etc.) can
  * integrate with a business's AI assistant using its API key.
  *
- * Authentication: x-api-key header — the business's agentApiKey.
+ * Authentication: x-api-key header — the agent's API key.
  *
  * Tools:
  *   chat                   — Send a message; get the agent's full reply
+ *   get_business_config    — Current business + agent configuration
  *   list_conversations     — Recent conversation threads
  *   get_conversation       — All messages in a thread
  *   list_knowledge         — Knowledge base document index
@@ -20,38 +21,159 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import {
   conversations,
   firecrawlJobs,
   knowledgeDocuments,
   messages,
+  SKILL_NAMES,
 } from '@gcfis/db/schema';
-import type { Business } from '@gcfis/db';
+import type { Agent, Business } from '@gcfis/db';
 import { runGraph } from '@gcfis/agent/graph';
 import { extractAndSaveMemory } from '@gcfis/agent/memory';
 import { parseAllowedDomains } from '../lib/business';
 import {
-  getEnabledSkillsForBusiness,
-  getMeetingIntegrationForBusiness,
-  getSupportIntegrationForBusiness,
+  disconnectIntegrationForAgent,
+  getAllIntegrationsForAgentScope,
+  getEnabledSkillsForAgentScope,
+  getMeetingIntegrationForAgentScope,
+  getSupportIntegrationForAgentScope,
+  setEnabledSkillsForAgent,
+  upsertIntegrationForAgent,
 } from '../lib/businessSkills';
 import { recordMessageUsage } from '../lib/billing';
 import { enqueueCrawlJob } from '../jobs/crawlQueue';
+import { processCrawlJob } from '../jobs/crawlRunner';
 import { createSupportTicket } from '../lib/supportTickets';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
+function sanitizeAssistantReply(text: string): string {
+  const filtered = text
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+
+      // Remove leaked internal tool-call traces from user-facing output.
+      if (
+        /^\{\s*"name"\s*:\s*"[a-zA-Z0-9_:-]+"\s*,\s*"parameters"\s*:\s*\{.*\}\s*\}$/.test(
+          trimmed
+        )
+      ) {
+        return false;
+      }
+
+      if (/^(tool_calls?|function_call)\b/i.test(trimmed)) {
+        return false;
+      }
+
+      return true;
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return filtered;
+}
+
+function getCrawlErrorHint(errorMessage: string | null): string | null {
+  if (!errorMessage) return null;
+
+  const normalized = errorMessage.toLowerCase();
+
+  if (normalized.includes('status code: 401') || normalized.includes('unauthorized')) {
+    return 'Firecrawl authentication failed. Verify FIRECRAWL_API_KEY in the running crawl executor (worker or backend) and restart the process.';
+  }
+
+  if (normalized.includes('firecrawl_api_key not set')) {
+    return 'FIRECRAWL_API_KEY is missing. Set it in your environment for whichever process executes crawl jobs.';
+  }
+
+  if (normalized.includes('no valid urls')) {
+    return 'The crawl job payload had no valid URLs. Ensure URLs are absolute (https://...) before enqueueing.';
+  }
+
+  if (normalized.includes('fetch failed') || normalized.includes('econnrefused')) {
+    return 'Network connectivity failed during crawling. Check outbound access and DNS from the worker environment.';
+  }
+
+  return null;
+}
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
-export function createMcpServer(business: Business): McpServer {
+export function createMcpServer(input: { business: Business; agent: Agent }): McpServer {
+  const { business, agent } = input;
   const server = new McpServer({
     name: 'gcfis-agent',
     version: '1.0.0',
   });
 
   const db = getDb();
+  const allowedSkillNames = [...SKILL_NAMES];
+  const allowedDomains = parseAllowedDomains(agent.allowedDomains);
+  const llmProvider = agent.llmProvider;
+  const llmModel = agent.llmModel;
+  const llmApiKey = agent.llmApiKey;
+  const llmBaseUrl = agent.llmBaseUrl;
+
+  const agentScopedConversationWhere = and(
+    eq(conversations.businessId, business.id),
+    eq(conversations.agentId, agent.id)
+  );
+  const agentScopedKnowledgeWhere = and(
+    eq(knowledgeDocuments.businessId, business.id),
+    eq(knowledgeDocuments.agentId, agent.id)
+  );
+  const agentScopedCrawlWhere = and(
+    eq(firecrawlJobs.businessId, business.id),
+    eq(firecrawlJobs.agentId, agent.id)
+  );
+
+  const dispatchCrawlJob = async (jobId: string, urls: string[]) => {
+    const queued = await enqueueCrawlJob(jobId);
+    if (queued) {
+      return { mode: 'queue' as const };
+    }
+
+    if (!process.env['FIRECRAWL_API_KEY']) {
+      return { mode: 'unavailable' as const };
+    }
+
+    // Redis queue is unavailable; run in background from API process.
+    processCrawlJob(jobId, business.id, agent.id, urls).catch((err) =>
+      console.error('[mcp/crawl] inline crawl failed:', err)
+    );
+
+    return { mode: 'inline' as const };
+  };
+
+  const buildBusinessConfig = async () => ({
+    business: {
+      id: business.id,
+      name: business.name,
+      slug: business.slug,
+      description: business.description,
+    },
+    agent: {
+      id: agent.id,
+      name: agent.name,
+      slug: agent.slug,
+      description: agent.description,
+      botName: agent.botName,
+      welcomeMessage: agent.welcomeMessage,
+      allowedDomains,
+      enabledSkills: await getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
+      llmProvider,
+      llmModel,
+      widgetPosition: agent.widgetPosition,
+      widgetTheme: agent.widgetTheme,
+      primaryColor: agent.primaryColor,
+      showAvatar: agent.showAvatar,
+    },
+  });
 
   // ── Tool: chat ──────────────────────────────────────────────────────────────
   server.tool(
@@ -71,7 +193,7 @@ export function createMcpServer(business: Business): McpServer {
 
       if (threadId) {
         const [existing] = await db
-          .select({ id: conversations.id, businessId: conversations.businessId })
+          .select({ id: conversations.id, businessId: conversations.businessId, agentId: conversations.agentId })
           .from(conversations)
           .where(eq(conversations.id, threadId))
           .limit(1);
@@ -87,11 +209,18 @@ export function createMcpServer(business: Business): McpServer {
           };
         }
 
+        if (existing.agentId && existing.agentId !== agent.id) {
+          return {
+            content: [{ type: 'text', text: 'Error: thread does not belong to this agent.' }],
+            isError: true,
+          };
+        }
+
         conversationId = existing.id;
       } else {
         const [newConversation] = await db
           .insert(conversations)
-          .values({ businessId: business.id, sessionId: crypto.randomUUID() })
+          .values({ businessId: business.id, agentId: agent.id, sessionId: crypto.randomUUID() })
           .returning({ id: conversations.id });
         conversationId = newConversation!.id;
       }
@@ -101,9 +230,9 @@ export function createMcpServer(business: Business): McpServer {
 
       // Run agent and collect full response
       const [enabledSkills, meetingIntegration, supportIntegration] = await Promise.all([
-        getEnabledSkillsForBusiness(business.id),
-        getMeetingIntegrationForBusiness(business.id),
-        getSupportIntegrationForBusiness(business.id),
+        getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
+        getMeetingIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
+        getSupportIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
       ]);
 
       const historyRows = await db
@@ -127,10 +256,11 @@ export function createMcpServer(business: Business): McpServer {
 
       const graphInput = {
         businessId: business.id,
+        agentId: agent.id,
         conversationId,
-        botName: business.botName,
+        botName: agent.botName,
         businessName: business.name,
-        allowedDomains: parseAllowedDomains(business.allowedDomains),
+        allowedDomains,
         userMessage: message,
         conversationHistory: normalizedHistory.slice(-20),
         enabledSkills,
@@ -144,6 +274,7 @@ export function createMcpServer(business: Business): McpServer {
         }) =>
           createSupportTicket({
             businessId: business.id,
+            agentId: agent.id,
             conversationId,
             reason: payload.reason,
             customerMessage: payload.customerMessage,
@@ -153,10 +284,10 @@ export function createMcpServer(business: Business): McpServer {
               source: 'mcp_agent_tool',
             },
           }),
-        ...(business.llmProvider !== null ? { llmProvider: business.llmProvider } : {}),
-        ...(business.llmModel !== null ? { llmModel: business.llmModel } : {}),
-        ...(business.llmApiKey !== null ? { llmApiKey: business.llmApiKey } : {}),
-        ...(business.llmBaseUrl !== null ? { llmBaseUrl: business.llmBaseUrl } : {}),
+        llmProvider,
+        llmModel,
+        ...(llmApiKey ? { llmApiKey } : {}),
+        ...(llmBaseUrl ? { llmBaseUrl } : {}),
       };
 
       let fullResponse = '';
@@ -176,6 +307,12 @@ export function createMcpServer(business: Business): McpServer {
         return { content: [{ type: 'text', text: `Agent error: ${msg}` }], isError: true };
       }
 
+      fullResponse = sanitizeAssistantReply(fullResponse);
+      if (!fullResponse) {
+        fullResponse =
+          'I do not have enough verified company data for a specific answer yet. Could you share one more detail?';
+      }
+
       // Persist assistant reply
       await db
         .insert(messages)
@@ -184,6 +321,7 @@ export function createMcpServer(business: Business): McpServer {
       // Background: memory extraction
       extractAndSaveMemory({
         businessId: business.id,
+        agentId: agent.id,
         conversationId,
         userMessage: message,
         assistantResponse: fullResponse,
@@ -202,6 +340,20 @@ export function createMcpServer(business: Business): McpServer {
         ],
         // Return threadId so the client can chain follow-up messages
         _meta: { threadId: conversationId },
+      };
+    }
+  );
+
+  // ── Tool: list_conversations ────────────────────────────────────────────────
+  server.tool(
+    'get_business_config',
+    'Return the current business and agent configuration for this API key.',
+    {},
+    async () => {
+      const config = await buildBusinessConfig();
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(config, null, 2) }],
       };
     }
   );
@@ -227,7 +379,7 @@ export function createMcpServer(business: Business): McpServer {
           updatedAt: conversations.updatedAt,
         })
         .from(conversations)
-        .where(eq(conversations.businessId, business.id))
+        .where(agentScopedConversationWhere)
         .orderBy(desc(conversations.updatedAt))
         .limit(limit);
 
@@ -285,7 +437,7 @@ export function createMcpServer(business: Business): McpServer {
         .where(eq(conversations.id, conversationId))
         .limit(1);
 
-      if (!conv || conv.businessId !== business.id) {
+      if (!conv || conv.businessId !== business.id || (conv.agentId && conv.agentId !== agent.id)) {
         return {
           content: [{ type: 'text', text: 'Conversation not found.' }],
           isError: true,
@@ -344,7 +496,7 @@ export function createMcpServer(business: Business): McpServer {
           createdAt: knowledgeDocuments.createdAt,
         })
         .from(knowledgeDocuments)
-        .where(eq(knowledgeDocuments.businessId, business.id))
+        .where(agentScopedKnowledgeWhere)
         .orderBy(desc(knowledgeDocuments.createdAt));
 
       if (docs.length === 0) {
@@ -357,6 +509,175 @@ export function createMcpServer(business: Business): McpServer {
     }
   );
 
+  // ── Tool: delete_knowledge_document ─────────────────────────────────────────
+  server.tool(
+    'delete_knowledge_document',
+    'Delete a knowledge document by ID for this business.',
+    {
+      documentId: z.string().uuid().describe('Knowledge document ID to delete'),
+    },
+    async ({ documentId }) => {
+      const [doc] = await db
+        .select({ id: knowledgeDocuments.id })
+        .from(knowledgeDocuments)
+        .where(
+          and(
+            eq(knowledgeDocuments.id, documentId),
+            eq(knowledgeDocuments.businessId, business.id),
+            eq(knowledgeDocuments.agentId, agent.id)
+          )
+        )
+        .limit(1);
+
+      if (!doc) {
+        return {
+          content: [{ type: 'text', text: 'Knowledge document not found.' }],
+          isError: true,
+        };
+      }
+
+      await db
+        .delete(knowledgeDocuments)
+        .where(
+          and(
+            eq(knowledgeDocuments.id, documentId),
+            eq(knowledgeDocuments.businessId, business.id),
+            eq(knowledgeDocuments.agentId, agent.id)
+          )
+        );
+
+      return {
+        content: [{ type: 'text', text: `Knowledge document deleted: ${documentId}` }],
+      };
+    }
+  );
+
+  // ── Tool: list_skills ───────────────────────────────────────────────────────
+  server.tool(
+    'list_skills',
+    'List available skills and currently enabled skills for this business.',
+    {},
+    async () => {
+      const enabled = await getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                available: allowedSkillNames,
+                enabled,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  );
+
+  // ── Tool: update_enabled_skills ─────────────────────────────────────────────
+  server.tool(
+    'update_enabled_skills',
+    'Replace enabled skills for this business. Any omitted skill will be disabled.',
+    {
+      skills: z.array(z.string()).describe('Complete list of skill names to enable'),
+    },
+    async ({ skills }) => {
+      const invalid = skills.filter((name) => !allowedSkillNames.includes(name as (typeof SKILL_NAMES)[number]));
+      if (invalid.length > 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Invalid skill names: ${invalid.join(', ')}. Allowed: ${allowedSkillNames.join(', ')}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      await setEnabledSkillsForAgent(agent.id, skills);
+      const enabled = await getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id });
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ enabled }, null, 2) }],
+      };
+    }
+  );
+
+  // ── Tool: list_integrations ─────────────────────────────────────────────────
+  server.tool(
+    'list_integrations',
+    'List integration status for this business plus active meeting/support integration context.',
+    {},
+    async () => {
+      const [integrations, meetingIntegration, supportIntegration] = await Promise.all([
+        getAllIntegrationsForAgentScope({ businessId: business.id, agentId: agent.id }),
+        getMeetingIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
+        getSupportIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
+      ]);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                integrations,
+                meetingIntegration,
+                supportIntegration,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  );
+
+  // ── Tool: upsert_integration ────────────────────────────────────────────────
+  server.tool(
+    'upsert_integration',
+    'Create or update an integration for this business.',
+    {
+      provider: z.string().min(1).max(40).describe('Provider slug, e.g. google, zoom, calendly, zendesk'),
+      isDefault: z.boolean().optional().describe('Mark this integration as default'),
+      accessToken: z.string().max(500).optional().nullable().describe('OAuth access token or API key'),
+      config: z.record(z.string()).optional().describe('Provider-specific config values'),
+    },
+    async ({ provider, isDefault, accessToken, config }) => {
+      await upsertIntegrationForAgent(agent.id, provider, {
+        ...(isDefault !== undefined ? { isDefault } : {}),
+        ...(accessToken !== undefined ? { accessToken } : {}),
+        ...(config !== undefined ? { configJson: JSON.stringify(config) } : {}),
+      });
+
+      const integrations = await getAllIntegrationsForAgentScope({ businessId: business.id, agentId: agent.id });
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ provider, integrations }, null, 2) }],
+      };
+    }
+  );
+
+  // ── Tool: disconnect_integration ────────────────────────────────────────────
+  server.tool(
+    'disconnect_integration',
+    'Disconnect an integration by provider for this business.',
+    {
+      provider: z.string().min(1).max(40).describe('Provider slug to disconnect'),
+    },
+    async ({ provider }) => {
+      await disconnectIntegrationForAgent(agent.id, provider);
+      const integrations = await getAllIntegrationsForAgentScope({ businessId: business.id, agentId: agent.id });
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ provider, integrations }, null, 2) }],
+      };
+    }
+  );
+
   // ── Tool: add_knowledge_url ─────────────────────────────────────────────────
   server.tool(
     'add_knowledge_url',
@@ -365,8 +686,6 @@ export function createMcpServer(business: Business): McpServer {
       url: z.string().url().describe('The URL to crawl and add to the knowledge base'),
     },
     async ({ url }) => {
-      const allowedDomains = parseAllowedDomains(business.allowedDomains);
-
       if (allowedDomains.length > 0) {
         try {
           const hostname = new URL(url).hostname.toLowerCase();
@@ -393,18 +712,19 @@ export function createMcpServer(business: Business): McpServer {
         .insert(firecrawlJobs)
         .values({
           businessId: business.id,
+          agentId: agent.id,
           urls: JSON.stringify([url]),
           status: 'queued',
         })
         .returning({ id: firecrawlJobs.id });
 
-      const queued = await enqueueCrawlJob(job!.id);
-      if (!queued) {
+      const dispatched = await dispatchCrawlJob(job!.id, [url]);
+      if (dispatched.mode === 'unavailable') {
         return {
           content: [
             {
               type: 'text',
-              text: 'Queue is unavailable. Ensure REDIS_URL is configured and crawl worker is running.',
+              text: 'Crawl execution is unavailable. Configure REDIS_URL with crawl worker, or set FIRECRAWL_API_KEY for inline fallback.',
             },
           ],
           isError: true,
@@ -415,7 +735,126 @@ export function createMcpServer(business: Business): McpServer {
         content: [
           {
             type: 'text',
-            text: `Crawl job queued (jobId: ${job!.id}). The URL will be scraped and indexed in the background. Check the Knowledge Base in admin to see when it's ready.`,
+            text:
+              dispatched.mode === 'queue'
+                ? `Crawl job queued (jobId: ${job!.id}). The URL will be scraped and indexed in the background. Check the Knowledge Base in admin to see when it's ready.`
+                : `Crawl job started inline (jobId: ${job!.id}) because queue is unavailable. It will still run in the background from the backend process.`,
+          },
+        ],
+      };
+    }
+  );
+
+  // ── Tool: trigger_crawl ─────────────────────────────────────────────────────
+  server.tool(
+    'trigger_crawl',
+    'Queue a crawl job for one or more URLs. Only allowed domains are accepted.',
+    {
+      urls: z.array(z.string().url()).min(1).max(20).describe('URLs to crawl'),
+    },
+    async ({ urls }) => {
+      const safeUrls =
+        allowedDomains.length === 0
+          ? urls
+          : urls.filter((url) => {
+              try {
+                const hostname = new URL(url).hostname.toLowerCase();
+                return allowedDomains.some(
+                  (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+                );
+              } catch {
+                return false;
+              }
+            });
+
+      if (safeUrls.length === 0) {
+        return {
+          content: [{ type: 'text', text: 'No URLs passed the domain allowlist check.' }],
+          isError: true,
+        };
+      }
+
+      const [job] = await db
+        .insert(firecrawlJobs)
+        .values({ businessId: business.id, agentId: agent.id, urls: JSON.stringify(safeUrls), status: 'queued' })
+        .returning({ id: firecrawlJobs.id, status: firecrawlJobs.status });
+
+      const dispatched = await dispatchCrawlJob(job!.id, safeUrls);
+      if (dispatched.mode === 'unavailable') {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Crawl execution is unavailable. Configure REDIS_URL with crawl worker, or set FIRECRAWL_API_KEY for inline fallback.',
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                jobId: job!.id,
+                status: job!.status,
+                acceptedUrls: safeUrls,
+                mode: dispatched.mode,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  );
+
+  // ── Tool: list_crawl_jobs ───────────────────────────────────────────────────
+  server.tool(
+    'list_crawl_jobs',
+    'List recent crawl jobs for this business.',
+    {
+      limit: z.number().min(1).max(100).default(25).describe('Maximum jobs to return (1-100)'),
+    },
+    async ({ limit }) => {
+      const rows = await db
+        .select({
+          id: firecrawlJobs.id,
+          status: firecrawlJobs.status,
+          urls: firecrawlJobs.urls,
+          errorMessage: firecrawlJobs.errorMessage,
+          createdAt: firecrawlJobs.createdAt,
+          updatedAt: firecrawlJobs.updatedAt,
+        })
+        .from(firecrawlJobs)
+        .where(agentScopedCrawlWhere)
+        .orderBy(desc(firecrawlJobs.createdAt))
+        .limit(limit);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              rows.map((row) => ({
+                ...row,
+                hint: getCrawlErrorHint(row.errorMessage),
+                urls: (() => {
+                  try {
+                    return JSON.parse(row.urls);
+                  } catch {
+                    return [];
+                  }
+                })(),
+                createdAt: row.createdAt.toISOString(),
+                updatedAt: row.updatedAt.toISOString(),
+              })),
+              null,
+              2
+            ),
           },
         ],
       };
@@ -428,22 +867,7 @@ export function createMcpServer(business: Business): McpServer {
     'gcfis://business/config',
     { mimeType: 'application/json' },
     async () => {
-      const config = {
-        id: business.id,
-        name: business.name,
-        slug: business.slug,
-        botName: business.botName,
-        welcomeMessage: business.welcomeMessage,
-        description: business.description,
-        allowedDomains: parseAllowedDomains(business.allowedDomains),
-        enabledSkills: await getEnabledSkillsForBusiness(business.id),
-        llmProvider: business.llmProvider,
-        llmModel: business.llmModel,
-        widgetPosition: business.widgetPosition,
-        widgetTheme: business.widgetTheme,
-        primaryColor: business.primaryColor,
-        showAvatar: business.showAvatar,
-      };
+      const config = await buildBusinessConfig();
 
       return {
         contents: [

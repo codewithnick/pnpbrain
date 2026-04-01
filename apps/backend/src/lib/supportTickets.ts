@@ -1,9 +1,10 @@
 import { getDb } from '@gcfis/db/client';
 import { supportTickets } from '@gcfis/db/schema';
-import { getSupportIntegrationForBusiness } from './businessSkills';
+import { getSupportIntegrationForAgentScope } from './businessSkills';
 
 export interface CreateSupportTicketInput {
   businessId: string;
+  agentId?: string;
   conversationId: string;
   reason: string;
   customerMessage: string;
@@ -123,12 +124,16 @@ async function createFreshdeskTicket(args: {
 
 export async function createSupportTicket(input: CreateSupportTicketInput): Promise<CreateSupportTicketResult> {
   const db = getDb();
-  const integration = await getSupportIntegrationForBusiness(input.businessId);
+  const integration = await getSupportIntegrationForAgentScope({
+    businessId: input.businessId,
+    ...(input.agentId ? { agentId: input.agentId } : {}),
+  });
 
   const SUPPORTED_PROVIDERS = new Set(['zendesk', 'freshdesk']);
   if (!SUPPORTED_PROVIDERS.has(integration.provider)) {
     await db.insert(supportTickets).values({
       businessId: input.businessId,
+      agentId: input.agentId,
       conversationId: input.conversationId,
       provider: integration.provider,
       status: 'failed',
@@ -170,6 +175,7 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
   if (missingConfig) {
     await db.insert(supportTickets).values({
       businessId: input.businessId,
+      agentId: input.agentId,
       conversationId: input.conversationId,
       provider: integration.provider,
       status: 'failed',
@@ -227,6 +233,7 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
 
     await db.insert(supportTickets).values({
       businessId: input.businessId,
+      agentId: input.agentId,
       conversationId: input.conversationId,
       provider: integration.provider,
       status: 'created',

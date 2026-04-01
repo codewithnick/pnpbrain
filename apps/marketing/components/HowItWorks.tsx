@@ -12,7 +12,7 @@ const steps = [
     number: '01',
     title: 'Sign up & connect your site',
     description:
-      'Create an account, name your assistant, and paste your website URL. GCFIS is ready in under 2 minutes.',
+      'Create an account, name your assistant, and paste your website URL. PNPBrain is ready in under 2 minutes.',
   },
   {
     number: '02',

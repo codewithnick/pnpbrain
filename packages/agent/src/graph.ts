@@ -53,6 +53,7 @@ interface MeetingIntegrationConfig {
 
 export interface GraphInput {
   businessId: string;
+  agentId?: string;
   conversationId: string;
   botName: string;
   businessName: string;
@@ -136,6 +137,7 @@ export class AgentGraphService {
   public async *runGraph(input: GraphInput) {
     const {
       businessId,
+      agentId,
       conversationId,
       botName,
       businessName,
@@ -152,16 +154,19 @@ export class AgentGraphService {
       llmBaseUrl,
     } = input;
 
-    const [ragChunks, memFacts] = await Promise.all([
-      this.ragService.retrieveKnowledgeChunks(businessId, userMessage),
+    const [ragChunks, memFacts, agentMemFacts] = await Promise.all([
+      this.ragService.retrieveKnowledgeChunks(businessId, agentId, userMessage),
       this.memoryService.loadMemoryFacts(conversationId),
+      this.memoryService.loadAgentMemoryFacts(businessId, agentId),
     ]);
+
+    const allMemoryFacts = [...agentMemFacts, ...memFacts];
 
     const systemPrompt = buildSystemPrompt({
       botName,
       businessName,
       ragContext: this.ragService.formatRagContext(ragChunks),
-      memoryFacts: this.memoryService.formatMemoryFacts(memFacts),
+      memoryFacts: this.memoryService.formatMemoryFacts(allMemoryFacts),
       currentDateTime: new Date().toISOString(),
     });
 

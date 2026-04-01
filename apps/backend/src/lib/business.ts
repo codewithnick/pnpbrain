@@ -6,10 +6,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { getDb } from '@gcfis/db/client';
 import {
-  businessIntegrations,
-  businessSkillSettings,
   businesses,
-  SKILL_NAMES,
 } from '@gcfis/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import type { Business } from '@gcfis/db';
@@ -19,28 +16,17 @@ type CacheEntry = { data: Business; expiresAt: number };
 // In-process TTL cache keyed by ID and by slug (good for single-instance dev)
 const cacheById   = new Map<string, CacheEntry>();
 const cacheBySlug = new Map<string, CacheEntry>();
-const cacheByApiKey = new Map<string, CacheEntry>();
 const TTL_MS = 60_000; // 1 minute
 
 function storeCached(biz: Business): void {
   const entry: CacheEntry = { data: biz, expiresAt: Date.now() + TTL_MS };
   cacheById.set(biz.id, entry);
   cacheBySlug.set(biz.slug, entry);
-  if (biz.agentApiKey) {
-    cacheByApiKey.set(biz.agentApiKey, entry);
-  }
 }
 
 function evict(biz: Business): void {
-  const previous = cacheById.get(biz.id)?.data;
-  if (previous?.agentApiKey) {
-    cacheByApiKey.delete(previous.agentApiKey);
-  }
   cacheById.delete(biz.id);
   cacheBySlug.delete(biz.slug);
-  if (biz.agentApiKey) {
-    cacheByApiKey.delete(biz.agentApiKey);
-  }
 }
 
 /**
@@ -118,22 +104,11 @@ export async function createBusiness(data: {
       name: data.name,
       slug: data.slug,
       ownerUserId: data.ownerUserId,
-      agentApiKey: generateBusinessApiKey(),
     })
     .returning();
   if (!business) {
     throw new Error('Failed to create business');
   }
-
-  await db.insert(businessSkillSettings).values(
-    SKILL_NAMES.map((skillName) => ({
-      businessId: business.id,
-      skillName,
-      enabled: skillName === 'calculator' || skillName === 'datetime',
-    }))
-  );
-
-  // New businesses have no integration rows — they are created on first connect.
 
   storeCached(business);
   return business;
@@ -145,18 +120,6 @@ export type UpdateBusinessPayload = Partial<
     | 'name'
     | 'slug'
     | 'description'
-    | 'allowedDomains'
-    | 'llmProvider'
-    | 'llmModel'
-    | 'llmApiKey'
-    | 'llmBaseUrl'
-    | 'primaryColor'
-    | 'botName'
-    | 'welcomeMessage'
-    | 'widgetPosition'
-    | 'widgetTheme'
-    | 'showAvatar'
-    | 'agentApiKey'
   >
 >;
 
@@ -194,42 +157,6 @@ export function parseAllowedDomains(domains: string): string[] {
   } catch {
     return [];
   }
-}
-
-export function generateBusinessApiKey(): string {
-  return `gcfis_live_${randomBytes(24).toString('base64url')}`;
-}
-
-export async function ensureBusinessApiKey(business: Business): Promise<Business> {
-  if (business.agentApiKey) {
-    return business;
-  }
-
-  const updated = await updateBusiness(business.id, { agentApiKey: generateBusinessApiKey() });
-  return updated ?? business;
-}
-
-/**
- * Loads a business by its API key (used to authenticate MCP and external API requests).
- * Returns null if no business has this key.
- */
-export async function getBusinessByApiKey(apiKey: string): Promise<Business | null> {
-  if (!apiKey || !apiKey.startsWith('gcfis_live_')) return null;
-
-  const cached = cacheByApiKey.get(apiKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.data;
-
-  const db = getDb();
-  const [business] = await db
-    .select()
-    .from(businesses)
-    .where(eq(businesses.agentApiKey, apiKey))
-    .limit(1);
-
-  if (!business) return null;
-
-  storeCached(business);
-  return business;
 }
 
 interface PublicChatTokenPayload {

@@ -108,16 +108,31 @@ export async function requireBusinessAuth(
 
   const { userId, email } = supabaseAuth;
   const db = getDb();
+  const requestedBusinessIdHeader = typeof req.header('x-business-id') === 'string'
+    ? req.header('x-business-id')
+    : undefined;
+  const requestedBusinessIdQuery = typeof req.query['businessId'] === 'string'
+    ? req.query['businessId']
+    : undefined;
+  const requestedBusinessId = requestedBusinessIdHeader?.trim() || requestedBusinessIdQuery?.trim() || null;
 
   // 1. Look up business_members
-  const [membership] = await db
+  const membershipRows = await db
     .select()
     .from(businessMembers)
     .where(eq(businessMembers.userId, userId))
-    .orderBy(businessMembers.createdAt)
-    .limit(1);
+    .orderBy(businessMembers.createdAt);
 
-  if (membership) {
+  if (membershipRows.length > 0) {
+    const membership = requestedBusinessId
+      ? membershipRows.find((row) => row.businessId === requestedBusinessId)
+      : membershipRows[0];
+
+    if (!membership) {
+      res.status(403).json({ ok: false, error: 'You are not a member of the requested business' });
+      return null;
+    }
+
     if (minRole && ROLE_RANK[membership.role as BusinessMemberRole] < ROLE_RANK[minRole]) {
       res.status(403).json({ ok: false, error: 'Insufficient permissions' });
       return null;
@@ -131,6 +146,39 @@ export async function requireBusinessAuth(
   }
 
   // 2. Fallback: check ownerUserId on businesses (for pre-RBAC accounts)
+  if (requestedBusinessId) {
+    const [ownedRequestedBusiness] = await db
+      .select({ id: businesses.id })
+      .from(businesses)
+      .where(and(eq(businesses.id, requestedBusinessId), eq(businesses.ownerUserId, userId)))
+      .limit(1);
+
+    if (!ownedRequestedBusiness) {
+      res.status(403).json({ ok: false, error: 'You are not a member of the requested business' });
+      return null;
+    }
+
+    const [requestedMembership] = await db
+      .insert(businessMembers)
+      .values({ businessId: ownedRequestedBusiness.id, userId, email, role: 'owner' })
+      .onConflictDoNothing()
+      .returning();
+
+    const requestedRole: BusinessMemberRole = (requestedMembership?.role ?? 'owner') as BusinessMemberRole;
+
+    if (minRole && ROLE_RANK[requestedRole] < ROLE_RANK[minRole]) {
+      res.status(403).json({ ok: false, error: 'Insufficient permissions' });
+      return null;
+    }
+
+    return {
+      userId,
+      email,
+      businessId: ownedRequestedBusiness.id,
+      role: requestedRole,
+    };
+  }
+
   const [business] = await db
     .select({ id: businesses.id })
     .from(businesses)

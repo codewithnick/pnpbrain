@@ -5,5 +5,6 @@ const router: ExpressRouter = Router();
 const controller = new DashboardController();
 
 router.get('/stats', controller.getStats);
+router.get('/usage', controller.getUsage);
 
 export default router;

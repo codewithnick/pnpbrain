@@ -17,7 +17,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import type { DashboardStats } from '@/lib/api-types';
+import type { DashboardStats, DashboardUsage } from '@/lib/api-types';
 import { fetchBackend } from '@/lib/supabase';
 
 const statCards = [
@@ -29,7 +29,14 @@ const statCards = [
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [usage, setUsage] = useState<DashboardUsage | null>(null);
   const [error, setError] = useState('');
+
+  const creditsRemainingLabel = (() => {
+    if (!usage) return '–';
+    if (usage.credits.remaining === null) return 'Unlimited';
+    return usage.credits.remaining.toLocaleString();
+  })();
 
   useEffect(() => {
     fetchBackend('/api/dashboard/stats')
@@ -38,8 +45,14 @@ export default function DashboardPage() {
         const json = (await res.json()) as { data: DashboardStats };
         setStats(json.data);
       })
+      .then(() => fetchBackend('/api/dashboard/usage'))
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Failed to load usage analytics');
+        const json = (await res.json()) as { data: DashboardUsage };
+        setUsage(json.data);
+      })
       .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard stats')
+        setError(err instanceof Error ? err.message : 'Failed to load dashboard analytics')
       );
   }, []);
 
@@ -87,6 +100,85 @@ export default function DashboardPage() {
       </Grid>
 
       <Grid container spacing={2.5} sx={{ mt: 1 }}>
+        <Grid size={{ xs: 12 }}>
+          <Paper sx={{ p: 3, borderRadius: 3 }}>
+            <Typography variant="h6">Usage analytics</Typography>
+            <Typography sx={{ mt: 0.5, color: 'text.secondary', fontSize: 14 }}>
+              Monitor API credit consumption and tracked skill usage in real time.
+            </Typography>
+
+            <Grid container spacing={1.5} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <Paper sx={{ p: 2, borderRadius: 2, bgcolor: 'rgba(14, 165, 233, 0.08)' }}>
+                  <Typography variant="caption" color="text.secondary">Credits used</Typography>
+                  <Typography variant="h5" sx={{ mt: 0.5 }}>
+                    {usage ? usage.credits.used.toLocaleString() : '–'}
+                  </Typography>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <Paper sx={{ p: 2, borderRadius: 2, bgcolor: 'rgba(34, 197, 94, 0.08)' }}>
+                  <Typography variant="caption" color="text.secondary">Credits remaining</Typography>
+                  <Typography variant="h5" sx={{ mt: 0.5 }}>
+                    {creditsRemainingLabel}
+                  </Typography>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <Paper sx={{ p: 2, borderRadius: 2, bgcolor: 'rgba(249, 115, 22, 0.08)' }}>
+                  <Typography variant="caption" color="text.secondary">User messages</Typography>
+                  <Typography variant="h5" sx={{ mt: 0.5 }}>
+                    {usage ? usage.totals.userMessages.toLocaleString() : '–'}
+                  </Typography>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <Paper sx={{ p: 2, borderRadius: 2, bgcolor: 'rgba(168, 85, 247, 0.12)' }}>
+                  <Typography variant="caption" color="text.secondary">Assistant messages</Typography>
+                  <Typography variant="h5" sx={{ mt: 0.5 }}>
+                    {usage ? usage.totals.assistantMessages.toLocaleString() : '–'}
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+
+            <Grid container spacing={1.5} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Paper sx={{ p: 2, borderRadius: 2 }}>
+                  <Typography variant="subtitle2">Skill usage (tracked)</Typography>
+                  <Stack spacing={0.5} sx={{ mt: 1.2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Firecrawl runs: {usage?.skills.trackedUsage.firecrawl.totalRuns ?? '–'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Firecrawl success: {usage?.skills.trackedUsage.firecrawl.successfulRuns ?? '–'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Support tickets: {usage?.skills.trackedUsage.supportEscalation.totalTickets ?? '–'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Support tickets success: {usage?.skills.trackedUsage.supportEscalation.successfulTickets ?? '–'}
+                    </Typography>
+                  </Stack>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Paper sx={{ p: 2, borderRadius: 2 }}>
+                  <Typography variant="subtitle2">Enabled skills</Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1.2, flexWrap: 'wrap', rowGap: 1 }}>
+                    {(usage?.skills.enabled ?? []).map((skill) => (
+                      <Chip key={skill} size="small" label={skill} variant="outlined" />
+                    ))}
+                    {usage?.skills.enabled.length === 0 && (
+                      <Typography variant="body2" color="text.secondary">No skills enabled.</Typography>
+                    )}
+                  </Stack>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Paper>
+        </Grid>
+
         <Grid size={{ xs: 12, lg: 8 }}>
           <Paper sx={{ p: 3, borderRadius: 3, height: '100%' }}>
             <Typography variant="h6">Operational status</Typography>

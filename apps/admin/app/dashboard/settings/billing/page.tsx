@@ -3,9 +3,7 @@
 /**
  * Settings → Billing
  *
- * Shows the current subscription/trial status and lets the owner
- * subscribe (Stripe Checkout) or manage an existing subscription
- * (Stripe Billing Portal).
+ * Shows the business credit wallet and lets the owner top up credits.
  */
 
 import { useEffect, useState } from 'react';
@@ -32,21 +30,13 @@ type BillingStatus = {
   trialDaysRemaining: number;
   currentPeriodEnd: string | null;
   messagesUsedTotal: number;
+  creditBalance: number;
+  signupCreditsGranted: number;
+  creditsPurchasedTotal: number;
+  creditsUsedTotal: number;
+  includedApiCredits: number | null;
+  remainingApiCredits: number | null;
   hasStripeCustomer: boolean;
-};
-
-const STATUS_LABELS: Record<BillingStatus['status'], string> = {
-  trialing: 'Free Trial',
-  active: 'Active',
-  past_due: 'Past Due',
-  canceled: 'Canceled',
-};
-
-const STATUS_COLORS: Record<BillingStatus['status'], string> = {
-  trialing: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
-  active: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300',
-  past_due: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-  canceled: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300',
 };
 
 export default function BillingPage() {
@@ -55,68 +45,62 @@ export default function BillingPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [flashMessage, setFlashMessage] = useState('');
+  const [topUpCredits, setTopUpCredits] = useState('100');
 
   const base = process.env['NEXT_PUBLIC_BACKEND_URL'] ?? '';
 
-  useEffect(() => {
-    // Handle return from Stripe Checkout / Portal
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('billing') === 'success') {
-      setFlashMessage('Subscription activated! Welcome aboard.');
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (params.get('billing') === 'canceled') {
-      setFlashMessage('Checkout canceled — no changes were made.');
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-
-    (async () => {
-      const token = await getToken();
-      const res = await fetch(`${base}/api/billing/status`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        setError('Failed to load billing information.');
-        setLoading(false);
-        return;
-      }
-      const json = (await res.json()) as { ok: boolean; data: BillingStatus };
-      setBilling(json.data);
-      setLoading(false);
-    })();
-  }, [base]);
-
-  async function handleSubscribe() {
-    setActionLoading(true);
-    setError('');
+  async function loadBilling() {
     const token = await getToken();
-    const res = await fetch(`${base}/api/billing/checkout`, {
-      method: 'POST',
+    const res = await fetch(`${base}/api/billing/status`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const json = (await res.json()) as { ok: boolean; url?: string; error?: string };
-    if (!res.ok || !json.url) {
-      setError(json.error ?? 'Failed to start checkout. Please try again.');
-      setActionLoading(false);
+    if (!res.ok) {
+      setError('Failed to load billing information.');
+      setLoading(false);
       return;
     }
-    window.location.href = json.url;
+
+    const json = (await res.json()) as { ok: boolean; data: BillingStatus };
+    setBilling(json.data);
+    setLoading(false);
   }
 
-  async function handleManageBilling() {
+  useEffect(() => {
+    void loadBilling();
+  }, [base]);
+
+  async function handleTopUp() {
     setActionLoading(true);
     setError('');
-    const token = await getToken();
-    const res = await fetch(`${base}/api/billing/portal`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const json = (await res.json()) as { ok: boolean; url?: string; error?: string };
-    if (!res.ok || !json.url) {
-      setError(json.error ?? 'Failed to open billing portal. Please try again.');
+    try {
+      const amount = Number(topUpCredits);
+      if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
+        setError('Enter a positive whole number of credits.');
+        setActionLoading(false);
+        return;
+      }
+
+      const token = await getToken();
+      const res = await fetch(`${base}/api/billing/top-up`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ credits: amount }),
+      });
+      const json = (await res.json()) as { ok: boolean; error?: string };
+      if (!res.ok) {
+        setError(json.error ?? 'Failed to top up credits.');
+        setActionLoading(false);
+        return;
+      }
+
+      setFlashMessage(`${amount.toLocaleString()} credits added to this business.`);
+      await loadBilling();
+    } finally {
       setActionLoading(false);
-      return;
     }
-    window.location.href = json.url;
   }
 
   if (loading) {
@@ -131,11 +115,10 @@ export default function BillingPage() {
     );
   }
 
-  const showSubscribeCta =
-    billing.status === 'trialing' || billing.status === 'canceled';
-  const showManageCta =
-    billing.hasStripeCustomer &&
-    (billing.status === 'active' || billing.status === 'past_due');
+  const walletStatusLabel = billing.creditBalance > 0 ? 'Credits Available' : 'Out of Credits';
+  const walletStatusColor = billing.creditBalance > 0
+    ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300'
+    : 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300';
 
   return (
     <div className="space-y-6 max-w-xl">
@@ -153,68 +136,52 @@ export default function BillingPage() {
       {/* Status card */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Subscription</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Credit wallet</h2>
           <span
-            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[billing.status]}`}
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${walletStatusColor}`}
           >
-            {STATUS_LABELS[billing.status]}
+            {walletStatusLabel}
           </span>
         </div>
 
-        {/* Trial info */}
-        {billing.isTrialing && !billing.trialExpired && (
-          <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 dark:bg-blue-950/30 dark:border-blue-900/50">
-            <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
-              {billing.trialDaysRemaining === 0
-                ? 'Your trial expires today.'
-                : `${billing.trialDaysRemaining} day${billing.trialDaysRemaining !== 1 ? 's' : ''} remaining in your free trial.`}
-            </p>
-            <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-              Trial ends on{' '}
-              {new Date(billing.trialEndsAt).toLocaleDateString(undefined, {
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric',
-              })}
-              . Subscribe before then to keep uninterrupted service.
-            </p>
-          </div>
-        )}
+        <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 dark:bg-blue-950/30 dark:border-blue-900/50">
+          <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
+            Every new business starts with {billing.signupCreditsGranted.toLocaleString()} free credits.
+          </p>
+          <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
+            Credits are shared across all users and all agents inside this business.
+          </p>
+        </div>
 
-        {/* Expired trial warning */}
-        {billing.trialExpired && (
+        {billing.creditBalance <= 0 && (
           <div className="rounded-xl bg-red-50 border border-red-100 p-4 dark:bg-red-950/30 dark:border-red-900/50">
-            <p className="text-sm font-medium text-red-800 dark:text-red-300">Your free trial has ended.</p>
+            <p className="text-sm font-medium text-red-800 dark:text-red-300">This business is out of credits.</p>
             <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-              Chat messages are blocked until you subscribe. Subscribe below to restore access.
+              Chat and MCP requests are blocked until credits are topped up.
             </p>
           </div>
         )}
 
-        {/* Past due warning */}
-        {billing.status === 'past_due' && (
-          <div className="rounded-xl bg-amber-50 border border-amber-100 p-4 dark:bg-amber-950/30 dark:border-amber-900/50">
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Payment failed.</p>
-            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              Your last invoice could not be collected. Update your payment method to avoid service
-              interruption.
-            </p>
-          </div>
-        )}
-
-        {/* Next billing date */}
-        {billing.currentPeriodEnd && (
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-500 dark:text-slate-400">Next billing date</span>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
+            <p className="text-xs text-gray-500 dark:text-slate-400">Current balance</p>
             <span className="font-medium text-gray-900 dark:text-slate-100">
-              {new Date(billing.currentPeriodEnd).toLocaleDateString(undefined, {
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+              {billing.creditBalance.toLocaleString()}
             </span>
           </div>
-        )}
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
+            <p className="text-xs text-gray-500 dark:text-slate-400">Purchased credits</p>
+            <span className="font-medium text-gray-900 dark:text-slate-100">
+              {billing.creditsPurchasedTotal.toLocaleString()}
+            </span>
+          </div>
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
+            <p className="text-xs text-gray-500 dark:text-slate-400">Credits used</p>
+            <span className="font-medium text-gray-900 dark:text-slate-100">
+              {billing.creditsUsedTotal.toLocaleString()}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Usage card */}
@@ -227,53 +194,71 @@ export default function BillingPage() {
           </span>
         </div>
         <p className="text-xs text-gray-400 dark:text-slate-500">
-          You are billed per message on the pay-as-you-go plan.
+          Each successful AI interaction debits business credits at the organization level.
         </p>
+        <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
+            <p className="text-xs text-gray-500 dark:text-slate-400">Included API credits</p>
+            <p className="mt-1 text-base font-semibold text-gray-900 dark:text-slate-100">
+              {billing.includedApiCredits === null ? 'Unlimited' : billing.includedApiCredits.toLocaleString()}
+            </p>
+          </div>
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
+            <p className="text-xs text-gray-500 dark:text-slate-400">Remaining API credits</p>
+            <p className="mt-1 text-base font-semibold text-gray-900 dark:text-slate-100">
+              {billing.remainingApiCredits === null ? 'Unlimited' : billing.remainingApiCredits.toLocaleString()}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Pricing info */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-3 dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Pay-as-you-go pricing</h2>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Credit model</h2>
         <ul className="space-y-2 text-sm text-gray-600 dark:text-slate-300">
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
-            <span>7-day free trial — no credit card required to start</span>
+            <span>{billing.signupCreditsGranted.toLocaleString()} free credits on signup</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
-            <span>Pay only for messages sent — no monthly base fee</span>
+            <span>Credits are shared across the business, not per user or per agent</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
-            <span>All features included: knowledge base, Firecrawl, memory</span>
+            <span>Each agent can have its own config, tools, integrations, and knowledge base</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
-            <span>Cancel anytime from the billing portal</span>
+            <span>Top up credits whenever the organization balance gets low</span>
           </li>
         </ul>
       </div>
 
-      {/* CTA buttons */}
-      {showSubscribeCta && (
-        <button
-          onClick={handleSubscribe}
-          disabled={actionLoading}
-          className="w-full rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-60 transition-colors"
-        >
-          {actionLoading ? 'Redirecting to checkout…' : 'Subscribe — Pay as you go'}
-        </button>
-      )}
-
-      {showManageCta && (
-        <button
-          onClick={handleManageBilling}
-          disabled={actionLoading}
-          className="w-full rounded-xl border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60 transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-        >
-          {actionLoading ? 'Opening portal…' : 'Manage billing & invoices'}
-        </button>
-      )}
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4 dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Top up credits</h2>
+        <div className="flex gap-3">
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={topUpCredits}
+            onChange={(event) => setTopUpCredits(event.target.value)}
+            className="flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            placeholder="Credits to add"
+          />
+          <button
+            onClick={handleTopUp}
+            disabled={actionLoading}
+            className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-60 transition-colors"
+          >
+            {actionLoading ? 'Adding…' : 'Add credits'}
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 dark:text-slate-500">
+          This currently performs a direct business credit top-up and records the transaction in the backend ledger.
+        </p>
+      </div>
     </div>
   );
 }

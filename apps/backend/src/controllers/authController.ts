@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '@gcfis/db/client';
-import { businesses, businessMembers } from '@gcfis/db/schema';
+import { businessCreditLedger, businesses, businessMembers } from '@gcfis/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireSupabaseAuth } from '../middleware/auth';
 import { createBusiness, getBusinessByOwner } from '../lib/business';
@@ -27,8 +27,7 @@ export class AuthController {
 
     const existing = await getBusinessByOwner(auth.userId);
     if (existing) {
-      const { llmApiKey: _ignored, ...safe } = existing;
-      return res.status(200).json({ ok: true, data: safe });
+      return res.status(200).json({ ok: true, data: existing });
     }
 
     const db = getDb();
@@ -55,7 +54,21 @@ export class AuthController {
       .values({ businessId: business.id, userId: auth.userId, email: '', role: 'owner' })
       .onConflictDoNothing();
 
-    const { llmApiKey: _ignored, ...safe } = business;
-    return res.status(201).json({ ok: true, data: safe });
+    // Bootstrap initial signup credits for the business.
+    await db2
+      .insert(businessCreditLedger)
+      .values({
+        businessId: business.id,
+        amount: business.signupCreditsGranted,
+        balanceAfter: business.creditBalance,
+        reason: 'signup_bonus',
+        createdByUserId: auth.userId,
+        metadata: {
+          source: 'auth.register',
+        },
+      })
+      .onConflictDoNothing();
+
+    return res.status(201).json({ ok: true, data: business });
   };
 }

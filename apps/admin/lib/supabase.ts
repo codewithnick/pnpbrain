@@ -4,6 +4,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/client';
 
 let supabaseClient: SupabaseClient | null = null;
+const SELECTED_AGENT_STORAGE_KEY = 'gcfis.selected-agent-id';
+
+const AGENT_SCOPED_API_PREFIXES = [
+  '/api/business/me',
+  '/api/dashboard',
+  '/api/knowledge',
+  '/api/conversations',
+  '/api/memory',
+];
 
 export function getSupabaseBrowserClient(): SupabaseClient {
   if (supabaseClient) {
@@ -17,6 +26,14 @@ export function getSupabaseBrowserClient(): SupabaseClient {
 
 export function getBackendUrl(): string {
   return process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3001';
+}
+
+function buildBackendRequestUrl(path: string): string {
+  const backendUrl = getBackendUrl().trim();
+  const baseUrl = backendUrl.length > 0 ? backendUrl : 'http://localhost:3001';
+
+  // Build URL safely for both absolute and relative API paths.
+  return new URL(path, baseUrl).toString();
 }
 
 function slugifyBusinessName(value: string): string {
@@ -112,6 +129,39 @@ export function persistAccessTokenCookie(accessToken?: string | null): void {
   document.cookie = `sb-access-token=${encodeURIComponent(accessToken)}; Path=/; Max-Age=604800; SameSite=Lax`;
 }
 
+export function getSelectedAgentId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const value = window.localStorage.getItem(SELECTED_AGENT_STORAGE_KEY)?.trim();
+  return value ? value : null;
+}
+
+export function setSelectedAgentId(agentId: string | null): void {
+  if (typeof window === 'undefined') return;
+
+  if (agentId && agentId.trim().length > 0) {
+    window.localStorage.setItem(SELECTED_AGENT_STORAGE_KEY, agentId.trim());
+  } else {
+    window.localStorage.removeItem(SELECTED_AGENT_STORAGE_KEY);
+  }
+}
+
+function shouldApplyAgentScope(path: string): boolean {
+  return AGENT_SCOPED_API_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+function withAgentScope(path: string, agentId: string | null): string {
+  if (!agentId || !shouldApplyAgentScope(path)) {
+    return path;
+  }
+
+  const url = new URL(path, 'http://localhost');
+  if (!url.searchParams.has('agentId')) {
+    url.searchParams.set('agentId', agentId);
+  }
+
+  return `${url.pathname}${url.search}`;
+}
+
 export async function fetchBackend(path: string, init: RequestInit = {}): Promise<Response> {
   const token = await getAccessToken();
   const headers = new Headers(init.headers);
@@ -120,8 +170,29 @@ export async function fetchBackend(path: string, init: RequestInit = {}): Promis
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  return fetch(`${getBackendUrl()}${path}`, {
-    ...init,
-    headers,
-  });
+  const selectedAgentId = getSelectedAgentId();
+  const scopedPath = withAgentScope(path, selectedAgentId);
+
+  if (selectedAgentId && shouldApplyAgentScope(path)) {
+    headers.set('x-agent-id', selectedAgentId);
+  }
+
+  try {
+    return await fetch(buildBackendRequestUrl(scopedPath), {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Failed to reach backend API. Ensure NEXT_PUBLIC_BACKEND_URL points to a running backend.';
+
+    return new Response(JSON.stringify({ error: message }), {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
 }

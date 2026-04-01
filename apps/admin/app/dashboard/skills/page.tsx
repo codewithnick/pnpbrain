@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { fetchBackend } from '@/lib/supabase';
+import { fetchAgents, resolveActiveAgent } from '@/lib/agents';
 
 const SKILLS = [
   {
@@ -51,9 +52,11 @@ const SKILLS = [
 
 export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
+  const [hasActiveAgent, setHasActiveAgent] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [skillSearch, setSkillSearch] = useState('');
 
   const [enabledSkills, setEnabledSkills] = useState<string[]>(['calculator', 'datetime']);
   const [allowedDomains, setAllowedDomains] = useState('');
@@ -75,30 +78,28 @@ export default function SkillsPage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetchBackend('/api/business/me');
-      if (!res.ok) {
+      const agents = await fetchAgents().catch(() => []);
+      const active = resolveActiveAgent(agents);
+      if (!active) {
+        setHasActiveAgent(false);
         setLoading(false);
         return;
       }
-      const json = (await res.json()) as { data?: Record<string, unknown> };
-      const data = json.data;
-      if (!data) {
-        setLoading(false);
-        return;
-      }
+
+      setHasActiveAgent(true);
+
+      // Load data directly from agent record (no extra business/me call)
+      const data = active as unknown as Record<string, unknown>;
 
       const oauthStatus = new URLSearchParams(window.location.search).get('oauth');
-      if (oauthStatus === 'google_connected') {
-        setSuccess(true);
-      }
-      if (oauthStatus === 'zoom_connected') {
+      if (oauthStatus === 'google_connected' || oauthStatus === 'zoom_connected') {
         setSuccess(true);
       }
 
-      if (Array.isArray(data.enabledSkills)) setEnabledSkills(data.enabledSkills as string[]);
-      if (Array.isArray(data.allowedDomains)) setAllowedDomains((data.allowedDomains as string[]).join('\n'));
-      if (Array.isArray(data.integrations)) {
-        const integrations = data.integrations as Array<Record<string, unknown>>;
+      if (Array.isArray(data['enabledSkills'])) setEnabledSkills(data['enabledSkills'] as string[]);
+      if (Array.isArray(data['allowedDomains'])) setAllowedDomains((data['allowedDomains'] as string[]).join('\n'));
+      if (Array.isArray(data['integrations'])) {
+        const integrations = data['integrations'] as Array<Record<string, unknown>>;
         const zendesk = integrations.find((integration) => integration.provider === 'zendesk');
         if (zendesk) {
           setHasZendeskToken(Boolean(zendesk.connected));
@@ -200,6 +201,16 @@ export default function SkillsPage() {
     );
   }
 
+  const normalizedSkillSearch = skillSearch.trim().toLowerCase();
+  const filteredSkills = SKILLS.filter((skill) => {
+    if (!normalizedSkillSearch) return true;
+    return (
+      skill.title.toLowerCase().includes(normalizedSkillSearch) ||
+      skill.description.toLowerCase().includes(normalizedSkillSearch) ||
+      skill.key.toLowerCase().includes(normalizedSkillSearch)
+    );
+  });
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -293,6 +304,22 @@ export default function SkillsPage() {
     return <div className="p-8 text-sm text-gray-400 dark:text-slate-500">Loading...</div>;
   }
 
+  if (!hasActiveAgent) {
+    return (
+      <div className="p-8 max-w-3xl">
+        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-900">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">No active agent selected</h2>
+          <p className="mt-2 text-sm text-gray-600 dark:text-slate-300">
+            Create an agent first, then select it to manage skills and integrations.
+          </p>
+          <Link href="/dashboard/agents" className="mt-4 inline-flex rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            Go to Agents
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-4xl">
       <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-2">Skills</h1>
@@ -317,8 +344,18 @@ export default function SkillsPage() {
             Enable the tools that make sense for your use-case. Changes take effect immediately.
           </p>
 
+          <div className="mb-4">
+            <input
+              type="text"
+              value={skillSearch}
+              onChange={(e) => setSkillSearch(e.target.value)}
+              placeholder="Search skills..."
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            />
+          </div>
+
           <div className="space-y-3">
-            {SKILLS.map((skill) => {
+            {filteredSkills.map((skill) => {
               const active = enabledSkills.includes(skill.key);
               return (
                 <div
@@ -353,6 +390,12 @@ export default function SkillsPage() {
                 </div>
               );
             })}
+
+            {filteredSkills.length === 0 && (
+              <div className="rounded-lg border border-dashed border-slate-700 bg-slate-900/60 px-4 py-3 text-xs text-slate-400">
+                No skills match your search.
+              </div>
+            )}
           </div>
         </div>
 

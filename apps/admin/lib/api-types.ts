@@ -5,6 +5,65 @@ export interface DashboardStats {
   crawlJobs: number;
 }
 
+export interface Agent {
+  id: string;
+  businessId: string;
+  name: string;
+  slug: string;
+  description: string;
+  isDefault: boolean;
+  allowedDomains: string[];
+  llmProvider: string;
+  llmModel: string;
+  llmApiKey?: string | null;
+  llmBaseUrl?: string | null;
+  primaryColor: string;
+  botName: string;
+  welcomeMessage: string;
+  widgetPosition: 'bottom-right' | 'bottom-left';
+  widgetTheme: 'light' | 'dark';
+  showAvatar: boolean;
+  agentApiKey?: string | null;
+  archivedAt?: string | null;
+  enabledSkills?: string[];
+  integrations?: unknown[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DashboardUsage {
+  credits: {
+    used: number;
+    included: number | null;
+    remaining: number | null;
+    percentUsed: number | null;
+    unit: 'credit';
+  };
+  totals: {
+    conversations: number;
+    knowledgeDocuments: number;
+    memoryFacts: number;
+    userMessages: number;
+    assistantMessages: number;
+  };
+  skills: {
+    enabled: string[];
+    enabledCount: number;
+    trackedUsage: {
+      firecrawl: {
+        totalRuns: number;
+        successfulRuns: number;
+        failedRuns: number;
+      };
+      supportEscalation: {
+        totalTickets: number;
+        successfulTickets: number;
+        failedTickets: number;
+      };
+    };
+  };
+}
+
 export interface ConversationSummary {
   id: string;
   sessionId: string;
@@ -31,6 +90,23 @@ export interface ConversationDetail {
   createdAt: string;
   updatedAt: string;
   messages: ConversationMessage[];
+}
+
+export interface MemoryFactItem {
+  id: string;
+  businessId: string;
+  conversationId: string;
+  fact: string;
+  createdAt: string;
+}
+
+export interface AgentMemoryFactItem {
+  id: string;
+  businessId: string;
+  fact: string;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface KnowledgeDocument {

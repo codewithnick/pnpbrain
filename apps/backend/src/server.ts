@@ -13,11 +13,13 @@ import healthRoutes from './routes/health';
 import knowledgeRoutes from './routes/knowledge';
 import memoryRoutes from './routes/memory';
 import publicRoutes from './routes/public';
+import agentsRoutes from './routes/agents';
 import skillsRoutes from './routes/skills';
 import teamRoutes from './routes/team';
 import { mcpRateLimiter } from './middleware/rateLimit';
 import { createMcpServer } from './mcp/server';
-import { getBusinessByApiKey } from './lib/business';
+import { getAgentByApiKey } from './lib/agents';
+import { getBusinessById } from './lib/business';
 
 loadBackendEnv();
 
@@ -73,19 +75,25 @@ app.use('/api/skills', skillsRoutes);
 // Team management endpoints
 app.use('/api/team', teamRoutes);
 
+// Agent management endpoints
+app.use('/api/agents', agentsRoutes);
+
 // ─── MCP Server ────────────────────────────────────────────────────────────
 // Stateless Streamable HTTP transport — one server instance per request.
-// Authenticate with: x-api-key: <your business agentApiKey>
+// Authenticate with: x-api-key: <your agent API key>
 
 app.post('/mcp', mcpRateLimiter, express.json(), async (req: express.Request, res: express.Response) => {
   const apiKey = req.header('x-api-key');
   if (!apiKey) {
-    res.status(401).json({ error: 'Missing x-api-key header. Provide your business API key.' });
+    res.status(401).json({ error: 'Missing x-api-key header. Provide your agent API key.' });
     return;
   }
 
-  const business = await getBusinessByApiKey(apiKey);
-  if (!business) {
+  const matchedAgent = await getAgentByApiKey(apiKey);
+  const business = matchedAgent ? await getBusinessById(matchedAgent.businessId) : null;
+  const agent = matchedAgent;
+
+  if (!business || !agent) {
     res.status(401).json({ error: 'Invalid API key.' });
     return;
   }
@@ -94,7 +102,7 @@ app.post('/mcp', mcpRateLimiter, express.json(), async (req: express.Request, re
   // enableJsonResponse returns a direct JSON response instead of opening an SSE stream,
   // which is simpler for tool-calling MCP clients.
   const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
-  const server = createMcpServer(business);
+  const server = createMcpServer({ business, agent });
 
   res.on('close', () => {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises

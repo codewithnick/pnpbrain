@@ -11,7 +11,7 @@ import { OllamaEmbeddings } from '@langchain/ollama';
 import { Embeddings } from '@langchain/core/embeddings';
 import { getDb } from '@gcfis/db/client';
 import { knowledgeChunks } from '@gcfis/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import type { RagChunk } from '@gcfis/types';
 
 type DbClient = ReturnType<typeof getDb>;
@@ -100,6 +100,7 @@ export class RagService {
 
   public async retrieveKnowledgeChunks(
     businessId: string,
+    agentId: string | undefined,
     query: string,
     topK = 5
   ): Promise<RagChunk[]> {
@@ -132,7 +133,14 @@ export class RagService {
         score: sql<number>`1 - (${knowledgeChunks.embedding} <=> ${vectorString}::vector)`,
       })
       .from(knowledgeChunks)
-      .where(eq(knowledgeChunks.businessId, businessId))
+      .where(
+        and(
+          eq(knowledgeChunks.businessId, businessId),
+          agentId
+            ? or(eq(knowledgeChunks.agentId, agentId), isNull(knowledgeChunks.agentId))
+            : undefined
+        )
+      )
       .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorString}::vector`)
       .limit(topK);
 
@@ -187,10 +195,11 @@ export function chunkText(
  */
 export async function retrieveKnowledgeChunks(
   businessId: string,
+  agentId: string | undefined,
   query: string,
   topK = 5
 ): Promise<RagChunk[]> {
-  return defaultRagService.retrieveKnowledgeChunks(businessId, query, topK);
+  return defaultRagService.retrieveKnowledgeChunks(businessId, agentId, query, topK);
 }
 
 /**
