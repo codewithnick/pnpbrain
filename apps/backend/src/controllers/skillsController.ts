@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '@gcfis/db/client';
 import { firecrawlJobs } from '@gcfis/db/schema';
-import { getBusinessById, parseAllowedDomains } from '../lib/business';
+import { getBusinessById } from '../lib/business';
 import { resolveAgentForBusiness } from '../lib/agents';
 import { requireApiKey, requireBusinessAuth } from '../middleware/auth';
 import { enqueueCrawlJob } from '../jobs/crawlQueue';
@@ -16,7 +16,6 @@ const requestSchema = z.object({
 type FirecrawlScope = {
   businessId: string;
   agentId: string;
-  allowedDomains: string[];
 };
 
 export class SkillsController {
@@ -30,27 +29,13 @@ export class SkillsController {
     const scope = await this.resolveScopeForFirecrawl(req, res, businessId, agentId);
     if (!scope) return;
 
-    const allowedDomains = scope.allowedDomains;
-    const safeUrls = urls.filter((url) => {
-      try {
-        const hostname = new URL(url).hostname;
-        return allowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
-      } catch {
-        return false;
-      }
-    });
-
-    if (safeUrls.length === 0) {
-      return res.status(400).json({ ok: false, error: 'No URLs passed the domain allowlist check' });
-    }
-
     const db = getDb();
     const [job] = await db
       .insert(firecrawlJobs)
       .values({
         businessId: scope.businessId,
         agentId: scope.agentId,
-        urls: JSON.stringify(safeUrls),
+        urls: JSON.stringify(urls),
         status: 'queued',
       })
       .returning();
@@ -95,7 +80,6 @@ export class SkillsController {
       return {
         businessId: auth.businessId,
         agentId: agent.id,
-        allowedDomains: parseAllowedDomains(agent.allowedDomains),
       };
     }
 
@@ -131,7 +115,6 @@ export class SkillsController {
     return {
       businessId: business.id,
       agentId: agent.id,
-      allowedDomains: parseAllowedDomains(agent.allowedDomains),
     };
   }
 }

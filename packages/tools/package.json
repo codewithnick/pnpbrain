@@ -17,6 +17,7 @@
     "@gcfis/types": "workspace:*",
     "@langchain/core": "^0.3.37",
     "@mendable/firecrawl-js": "^1.16.0",
+    "axios": "^1.11.0",
     "langchain": "^0.3.19",
     "zod": "^3.24.1"
   },

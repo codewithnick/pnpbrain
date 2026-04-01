@@ -15,8 +15,9 @@ interface S3KnowledgeConfig {
 export interface UploadKnowledgeInput {
   businessId: string;
   title: string;
-  content: string;
+  content: string | Buffer;
   contentType?: string;
+  fileName?: string;
 }
 
 export interface UploadKnowledgeResult {
@@ -42,9 +43,9 @@ export class S3KnowledgeStorageService {
   }
 
   public async uploadDocument(input: UploadKnowledgeInput): Promise<UploadKnowledgeResult> {
-    const contentType = input.contentType?.trim() || 'text/plain; charset=utf-8';
-    const key = this.buildObjectKey(input.businessId, input.title);
-    const body = Buffer.from(input.content, 'utf8');
+    const body = Buffer.isBuffer(input.content) ? input.content : Buffer.from(input.content, 'utf8');
+    const contentType = input.contentType?.trim() || (Buffer.isBuffer(input.content) ? 'application/octet-stream' : 'text/plain; charset=utf-8');
+    const key = this.buildObjectKey(input.businessId, input.title, input.fileName, contentType);
 
     await this.client.send(
       new PutObjectCommand({
@@ -87,7 +88,7 @@ export class S3KnowledgeStorageService {
     );
   }
 
-  private buildObjectKey(businessId: string, title: string): string {
+  private buildObjectKey(businessId: string, title: string, fileName?: string, contentType?: string): string {
     const safeTitle = title
       .toLowerCase()
       .trim()
@@ -95,7 +96,44 @@ export class S3KnowledgeStorageService {
       .replace(/(^-|-$)/g, '')
       .slice(0, 80) || 'document';
 
-    return `knowledge/${businessId}/${Date.now()}-${safeTitle}.txt`;
+    const extension = resolveStorageExtension(fileName, contentType);
+
+    return `knowledge/${businessId}/${Date.now()}-${safeTitle}${extension ? `.${extension}` : ''}`;
+  }
+}
+
+function resolveStorageExtension(fileName?: string, contentType?: string): string {
+  const fileExtension = fileName ? fileName.split('.').pop()?.toLowerCase() ?? '' : '';
+  if (fileExtension && fileExtension.length <= 8) {
+    return fileExtension;
+  }
+
+  switch (contentType?.split(';')[0]?.trim().toLowerCase()) {
+    case 'text/plain':
+      return 'txt';
+    case 'text/markdown':
+      return 'md';
+    case 'text/csv':
+      return 'csv';
+    case 'application/json':
+      return 'json';
+    case 'application/pdf':
+      return 'pdf';
+    case 'text/html':
+      return 'html';
+    case 'application/xml':
+    case 'text/xml':
+      return 'xml';
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      return 'docx';
+    case 'application/msword':
+      return 'doc';
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      return 'xlsx';
+    case 'application/vnd.ms-excel':
+      return 'xls';
+    default:
+      return 'bin';
   }
 }
 

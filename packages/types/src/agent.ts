@@ -71,4 +71,7 @@ export type SkillName =
   | 'lead_qualification'
   | 'meeting_scheduler'
   | 'support_escalation'
+  | 'http_requests'
+  | 'web_preview'
+  | 'iframe_embed'
   | 'web_search';

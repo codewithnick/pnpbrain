@@ -9,3 +9,8 @@ export { leadQualificationTool } from './lead-qualification.js';
 export { meetingSchedulerTool } from './meeting-scheduler.js';
 export { createMeetingBookingTool } from './meeting-booking.js';
 export { createSupportTicketTool } from './support-ticket.js';
+export { createLeadHandoffTool } from './lead-handoff.js';
+export { createCustomWebhookTool } from './custom-webhook.js';
+export { createHttpRequestTool } from './http-request.js';
+export { createWebPagePreviewTool, createIframeEmbedTool } from './web-preview.js';
+export type { CustomWebhookSkillDefinition } from './custom-webhook.js';

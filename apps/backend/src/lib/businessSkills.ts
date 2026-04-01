@@ -9,6 +9,25 @@ import { decryptSecret, encryptSecret } from './secrets';
 
 const SKILL_SET = new Set<string>(SKILL_NAMES);
 type SkillName = (typeof SKILL_NAMES)[number];
+const loggedDecryptFailures = new Set<string>();
+
+// Safe decryption with error handling
+function safeDecryptSecret(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return decryptSecret(value);
+  } catch (error) {
+    const signature = value.slice(0, 24);
+    if (!loggedDecryptFailures.has(signature)) {
+      loggedDecryptFailures.add(signature);
+      console.error(
+        '[businessSkills] Decryption failed for stored secret. This usually means the token was encrypted with a different DATA_ENCRYPTION_KEY, so the integration must be reconnected.',
+        error instanceof Error ? error.message : error
+      );
+    }
+    return null; // Return null if decryption fails
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Skill helpers (unchanged)
@@ -109,6 +128,22 @@ export interface SupportIntegrationConfig {
   config?: {
     subdomain?: string;
     supportEmail?: string;
+    siteUrl?: string;
+    projectKey?: string;
+    issueType?: string;
+    [key: string]: unknown;
+  };
+}
+
+export interface LeadHandoffIntegrationConfig {
+  provider: string;
+  accessToken?: string;
+  config?: {
+    portalId?: string;
+    pipelineId?: string;
+    dealStage?: string;
+    webhookUrl?: string;
+    eventName?: string;
     [key: string]: unknown;
   };
 }
@@ -173,11 +208,17 @@ async function getAgentIntegrationRows(agentId: string): Promise<IntegrationRow[
 function mapIntegrationRows(rows: IntegrationRow[]): IntegrationStatus[] {
   return rows.map((row) => {
     const config = parseConfigJson(row.configJson);
+    const decryptedAccessToken = safeDecryptSecret(row.accessToken);
+    const decryptedRefreshToken = safeDecryptSecret(row.refreshToken);
+    const connected =
+      !!decryptedAccessToken ||
+      !!config.schedulingUrl ||
+      (row.provider === 'zapier' && typeof config['webhookUrl'] === 'string' && !!config['webhookUrl'].trim());
     return {
       provider: row.provider,
       isDefault: row.isDefault,
-      connected: !!row.accessToken || !!config.schedulingUrl,
-      hasRefreshToken: !!row.refreshToken,
+      connected,
+      hasRefreshToken: !!decryptedRefreshToken,
       config,
     };
   });
@@ -200,8 +241,8 @@ function pickMeetingIntegration(rows: IntegrationRow[]): MeetingIntegrationConfi
   if (!row) return { provider: 'none' };
 
   const config = parseConfigJson(row.configJson);
-  const accessToken = decryptSecret(row.accessToken);
-  const refreshToken = decryptSecret(row.refreshToken);
+  const accessToken = safeDecryptSecret(row.accessToken);
+  const refreshToken = safeDecryptSecret(row.refreshToken);
   return {
     provider: row.provider,
     ...(accessToken ? { accessToken } : {}),
@@ -212,7 +253,7 @@ function pickMeetingIntegration(rows: IntegrationRow[]): MeetingIntegrationConfi
 }
 
 function pickSupportIntegration(rows: IntegrationRow[]): SupportIntegrationConfig {
-  const SUPPORT_PROVIDERS = new Set(['zendesk', 'freshdesk']);
+  const SUPPORT_PROVIDERS = new Set(['zendesk', 'freshdesk', 'jira']);
   const supportRows = rows.filter((row) => SUPPORT_PROVIDERS.has(row.provider));
   if (supportRows.length === 0) return { provider: 'none' };
 
@@ -221,12 +262,43 @@ function pickSupportIntegration(rows: IntegrationRow[]): SupportIntegrationConfi
     const cfg = parseConfigJson(row.configJson);
     if (!row.accessToken) return false;
     if (row.provider === 'freshdesk') return typeof cfg['domain'] === 'string';
+    if (row.provider === 'jira') {
+      return (
+        typeof cfg['siteUrl'] === 'string'
+        && typeof cfg['projectKey'] === 'string'
+        && typeof cfg['supportEmail'] === 'string'
+      );
+    }
     return typeof cfg['subdomain'] === 'string' && typeof cfg['supportEmail'] === 'string';
   });
   const row = defaultRow ?? configuredRow ?? supportRows[0];
   if (!row) return { provider: 'none' };
 
-  const accessToken = decryptSecret(row.accessToken);
+  const accessToken = safeDecryptSecret(row.accessToken);
+  const config = parseConfigJson(row.configJson);
+  return {
+    provider: row.provider,
+    ...(accessToken ? { accessToken } : {}),
+    ...(Object.keys(config).length > 0 ? { config } : {}),
+  };
+}
+
+function pickLeadHandoffIntegration(rows: IntegrationRow[]): LeadHandoffIntegrationConfig {
+  const LEAD_HANDOFF_PROVIDERS = new Set(['hubspot', 'zapier']);
+  const handoffRows = rows.filter((row) => LEAD_HANDOFF_PROVIDERS.has(row.provider));
+  if (handoffRows.length === 0) return { provider: 'none' };
+
+  const defaultRow = handoffRows.find((row) => row.isDefault);
+  const configuredRow = handoffRows.find((row) => {
+    const cfg = parseConfigJson(row.configJson);
+    if (row.provider === 'hubspot') return !!row.accessToken;
+    if (row.provider === 'zapier') return typeof cfg['webhookUrl'] === 'string';
+    return false;
+  });
+  const row = defaultRow ?? configuredRow ?? handoffRows[0];
+  if (!row) return { provider: 'none' };
+
+  const accessToken = safeDecryptSecret(row.accessToken);
   const config = parseConfigJson(row.configJson);
   return {
     provider: row.provider,
@@ -239,7 +311,7 @@ export async function getAllIntegrationsForAgentScope(input: {
   businessId?: string;
   agentId?: string | null;
 }): Promise<IntegrationStatus[]> {
-  if (!input.agentId) {
+  if (input.agentId === undefined || input.agentId === null) {
     return [];
   }
 
@@ -281,6 +353,7 @@ export async function upsertIntegrationForAgent(
     .onConflictDoUpdate({
       target: [agentIntegrations.agentId, agentIntegrations.provider],
       set: {
+        updatedAt: sql`now()`,
         ...(data.isDefault !== undefined ? { isDefault: data.isDefault } : {}),
         ...(data.accessToken !== undefined
           ? { accessToken: encryptSecret(data.accessToken) }
@@ -288,9 +361,10 @@ export async function upsertIntegrationForAgent(
         ...(data.refreshToken !== undefined
           ? { refreshToken: encryptSecret(data.refreshToken) }
           : {}),
-        ...(data.tokenExpiresAt !== undefined ? { tokenExpiresAt: data.tokenExpiresAt } : {}),
+        ...(data.tokenExpiresAt !== undefined
+          ? { tokenExpiresAt: data.tokenExpiresAt }
+          : {}),
         ...(data.configJson !== undefined ? { configJson: data.configJson } : {}),
-        updatedAt: sql`now()`,
       },
     });
 }
@@ -338,4 +412,16 @@ export async function getSupportIntegrationForAgentScope(input: {
 
   const agentRows = await getAgentIntegrationRows(input.agentId);
   return pickSupportIntegration(agentRows);
+}
+
+export async function getLeadHandoffIntegrationForAgentScope(input: {
+  businessId?: string;
+  agentId?: string | null;
+}): Promise<LeadHandoffIntegrationConfig> {
+  if (input.agentId === undefined || input.agentId === null) {
+    return { provider: 'none' };
+  }
+
+  const agentRows = await getAgentIntegrationRows(input.agentId);
+  return pickLeadHandoffIntegration(agentRows);
 }

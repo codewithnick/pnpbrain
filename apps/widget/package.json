@@ -4,10 +4,10 @@
   "private": true,
   "description": "PNPBrain embeddable chat widget — standalone React app + script tag build",
   "scripts": {
-    "dev": "next dev --port 3003",
+    "dev": "next dev --port 3013",
     "build": "next build",
     "build:embed": "node scripts/build-embed.mjs",
-    "start": "next start --port 3003",
+    "start": "next start --port 3013",
     "lint": "echo 'Skipping ESLint for Next.js app'",
     "type-check": "tsc --noEmit",
     "clean": "rimraf .next dist"

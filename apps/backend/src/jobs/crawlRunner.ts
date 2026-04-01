@@ -3,7 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
 import { MemoryService } from '@gcfis/agent/memory';
-import { chunkText, getEmbeddingModel } from '@gcfis/agent/rag';
+import { chunkText, getEmbeddingModel, normalizeEmbeddingVector } from '@gcfis/agent/rag';
 
 function buildCrawlMemoryFacts(urls: string[], ingestedPages: number, titles: string[]): string[] {
   const hosts = Array.from(
@@ -80,6 +80,9 @@ export async function processCrawlJob(
           );
 
         const title = result.metadata?.title ?? url;
+        const chunks = chunkText(result.markdown);
+        const vectors = await embeddings.embedDocuments(chunks.map((c) => c.content));
+
         const [doc] = await db
           .insert(knowledgeDocuments)
           .values({ businessId, agentId, title, content: result.markdown, sourceUrl: url })
@@ -88,9 +91,6 @@ export async function processCrawlJob(
         ingestedPages += 1;
         ingestedTitles.push(title);
 
-        const chunks = chunkText(result.markdown);
-        const vectors = await embeddings.embedDocuments(chunks.map((c) => c.content));
-
         await db.insert(knowledgeChunks).values(
           chunks.map((chunk, i) => ({
             documentId: doc!.id,
@@ -98,7 +98,7 @@ export async function processCrawlJob(
             agentId,
             content: chunk.content,
             chunkIndex: chunk.index,
-            embedding: vectors[i] ?? [],
+            embedding: normalizeEmbeddingVector(vectors[i] ?? []),
           }))
         );
       } catch (err) {

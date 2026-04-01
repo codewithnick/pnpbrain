@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const email = user?.email ?? '';
 
   // The return URL is the billing settings page in the admin app
-  const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3002';
+  const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3012';
   const returnUrl = `${adminUrl}/dashboard/settings/billing`;
 
   try {

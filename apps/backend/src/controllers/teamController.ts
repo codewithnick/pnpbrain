@@ -25,7 +25,7 @@ const updateRoleSchema = z.object({
 });
 
 function getAdminBaseUrl(): string {
-  return process.env['ADMIN_BASE_URL'] ?? 'http://localhost:3000';
+  return process.env['ADMIN_BASE_URL'] ?? 'http://localhost:3010';
 }
 
 export class TeamController {

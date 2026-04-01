@@ -53,7 +53,7 @@ function AcceptPageInner() {
     }
     (async () => {
       const res = await fetch(
-        `${process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3001'}/api/team/invitations/preview?token=${encodeURIComponent(token)}`,
+        `${process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3011'}/api/team/invitations/preview?token=${encodeURIComponent(token)}`,
       );
       const json = (await res.json()) as { ok: boolean; data?: InviteDetail; error?: string };
       if (!res.ok || !json.ok) {

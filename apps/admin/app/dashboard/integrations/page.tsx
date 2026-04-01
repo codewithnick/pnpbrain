@@ -14,7 +14,7 @@ interface ConfigField {
   key: string;
   label: string;
   placeholder?: string;
-  type?: 'text' | 'url';
+  type?: 'text' | 'url' | 'password';
 }
 
 interface IntegrationDef {
@@ -23,6 +23,9 @@ interface IntegrationDef {
   description: string;
   oauthEnabled: boolean;
   supportsDefault: boolean;
+  secretFieldKey?: string;
+  secretFieldLabel?: string;
+  secretFieldPlaceholder?: string;
   configFields: ConfigField[];
 }
 
@@ -86,6 +89,51 @@ const INTEGRATIONS: IntegrationDef[] = [
       { key: 'apiToken', label: 'API Key', placeholder: 'Freshdesk API key' },
     ],
   },
+  {
+    id: 'jira',
+    name: 'Jira',
+    description: 'Create Jira issues for escalated customer support conversations.',
+    oauthEnabled: false,
+    supportsDefault: false,
+    configFields: [
+      { key: 'siteUrl', label: 'Jira Site URL', placeholder: 'https://your-team.atlassian.net', type: 'url' },
+      { key: 'projectKey', label: 'Project Key', placeholder: 'SUP' },
+      { key: 'issueType', label: 'Issue Type', placeholder: 'Task' },
+      { key: 'supportEmail', label: 'Jira Email', placeholder: 'support@company.com' },
+      { key: 'apiToken', label: 'Jira API Token', placeholder: 'Atlassian API token', type: 'password' },
+    ],
+  },
+  {
+    id: 'hubspot',
+    name: 'HubSpot',
+    description: 'Route qualified leads into HubSpot contacts so sales can follow up fast.',
+    oauthEnabled: false,
+    supportsDefault: true,
+    secretFieldKey: 'accessToken',
+    secretFieldLabel: 'Private App Access Token',
+    secretFieldPlaceholder: 'pat-xxx',
+    configFields: [
+      { key: 'portalId', label: 'Portal ID', placeholder: '12345678' },
+      { key: 'pipelineId', label: 'Deal Pipeline ID', placeholder: 'default' },
+      { key: 'dealStage', label: 'Default Deal Stage', placeholder: 'appointmentscheduled' },
+    ],
+  },
+  {
+    id: 'zapier',
+    name: 'Zapier',
+    description: 'Trigger Zapier automations when the agent qualifies a lead or needs a workflow.',
+    oauthEnabled: false,
+    supportsDefault: false,
+    configFields: [
+      {
+        key: 'webhookUrl',
+        label: 'Webhook URL',
+        placeholder: 'https://hooks.zapier.com/hooks/catch/...',
+        type: 'url',
+      },
+      { key: 'eventName', label: 'Event Name', placeholder: 'qualified_lead' },
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -104,7 +152,7 @@ interface IntegrationStatus {
 // Alert
 // ---------------------------------------------------------------------------
 
-function Alert({ type, message }: { type: 'success' | 'error'; message: string }) {
+function Alert({ type, message }: Readonly<{ type: 'success' | 'error'; message: string }>) {
   return (
     <div
       className={`rounded-lg px-4 py-3 text-sm ${
@@ -123,12 +171,12 @@ function Alert({ type, message }: { type: 'success' | 'error'; message: string }
 // ---------------------------------------------------------------------------
 
 interface IntegrationCardProps {
-  def: IntegrationDef;
-  status: IntegrationStatus | undefined;
-  connecting: boolean;
-  onConnect: (provider: string) => Promise<void>;
-  onDisconnect: (provider: string) => Promise<void>;
-  onSaveConfig: (
+  readonly def: IntegrationDef;
+  readonly status: IntegrationStatus | undefined;
+  readonly connecting: boolean;
+  readonly onConnect: (provider: string) => Promise<void>;
+  readonly onDisconnect: (provider: string) => Promise<void>;
+  readonly onSaveConfig: (
     provider: string,
     config: Record<string, string>,
     isDefault: boolean
@@ -145,6 +193,7 @@ function IntegrationCard({
 }: IntegrationCardProps) {
   const connected = status?.connected ?? false;
   const [localConfig, setLocalConfig] = useState<Record<string, string>>(status?.config ?? {});
+  const [secretValue, setSecretValue] = useState('');
   const [isDefault, setIsDefault] = useState(status?.isDefault ?? false);
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState('');
@@ -155,6 +204,7 @@ function IntegrationCard({
     if (status) {
       setLocalConfig(status.config);
       setIsDefault(status.isDefault);
+      setSecretValue('');
     }
   }, [status]);
 
@@ -162,7 +212,14 @@ function IntegrationCard({
     setSaving(true);
     setLocalError('');
     setLocalSuccess(false);
-    const err = await onSaveConfig(def.id, localConfig, isDefault);
+    const err = await onSaveConfig(
+      def.id,
+      {
+        ...localConfig,
+        ...(def.secretFieldKey ? { [def.secretFieldKey]: secretValue } : {}),
+      },
+      isDefault
+    );
     setSaving(false);
     if (err) {
       setLocalError(err);
@@ -235,6 +292,21 @@ function IntegrationCard({
             </div>
           ))}
 
+          {def.secretFieldKey && (
+            <div>
+              <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">
+                {def.secretFieldLabel ?? 'Secret'}
+              </label>
+              <input
+                type="password"
+                value={secretValue}
+                onChange={(e) => setSecretValue(e.target.value)}
+                placeholder={def.secretFieldPlaceholder}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
+          )}
+
           {def.supportsDefault && (
             <div className="flex items-center gap-3 pt-1">
               <input
@@ -248,7 +320,7 @@ function IntegrationCard({
                 htmlFor={`default-${def.id}`}
                 className="text-xs text-gray-600 dark:text-slate-300"
               >
-                Use as default meeting provider
+                Use as default integration
               </label>
             </div>
           )}
@@ -302,11 +374,11 @@ export default function IntegrationsPage() {
       setIntegrations(json.data?.integrations ?? []);
       setHasActiveAgent(true);
 
-      const oauthStatus = new URLSearchParams(window.location.search).get('oauth');
+      const oauthStatus = new URLSearchParams(globalThis.window.location.search).get('oauth');
       if (oauthStatus?.endsWith('_connected')) {
         const provider = oauthStatus.replace('_connected', '');
         setGlobalSuccess(`${provider.charAt(0).toUpperCase() + provider.slice(1)} connected successfully.`);
-        window.history.replaceState({}, document.title, window.location.pathname);
+        globalThis.window.history.replaceState({}, globalThis.document.title, globalThis.window.location.pathname);
         setTimeout(() => setGlobalSuccess(''), 4000);
       }
 
@@ -317,7 +389,7 @@ export default function IntegrationsPage() {
   const handleConnect = useCallback(async (provider: string) => {
     setGlobalError('');
     setConnectingProvider(provider);
-    const returnTo = `${window.location.origin}${window.location.pathname}?oauth=${provider}_connected`;
+    const returnTo = `${globalThis.window.location.origin}${globalThis.window.location.pathname}?oauth=${provider}_connected`;
     const res = await fetchBackend(`/api/business/me/integrations/${provider}/connect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -339,7 +411,7 @@ export default function IntegrationsPage() {
       return;
     }
 
-    window.location.href = authUrl;
+    globalThis.window.location.href = authUrl;
   }, []);
 
   const handleDisconnect = useCallback(async (provider: string) => {
@@ -371,10 +443,21 @@ export default function IntegrationsPage() {
       config: Record<string, string>,
       isDefault: boolean
     ): Promise<string | undefined> => {
+      const def = INTEGRATIONS.find((item) => item.id === provider);
+      const nextConfig = { ...config };
+      const secretValue = def?.secretFieldKey ? nextConfig[def.secretFieldKey]?.trim() : '';
+      if (def?.secretFieldKey) {
+        delete nextConfig[def.secretFieldKey];
+      }
+
       const res = await fetchBackend(`/api/business/me/integrations/${provider}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, isDefault }),
+        body: JSON.stringify({
+          config: nextConfig,
+          ...(secretValue ? { accessToken: secretValue } : {}),
+          isDefault,
+        }),
       });
 
       if (!res.ok) {
@@ -383,20 +466,22 @@ export default function IntegrationsPage() {
       }
 
       setIntegrations((prev) => {
-        const def = INTEGRATIONS.find((item) => item.id === provider);
         const existing = prev.find((s) => s.provider === provider);
+        const hasSecret = def?.secretFieldKey
+          ? !!secretValue || (existing?.connected ?? false)
+          : true;
         const hasAllConfig =
           !!def &&
           def.configFields.every((field) => {
-            const value = config[field.key];
+            const value = nextConfig[field.key];
             return typeof value === 'string' && value.trim().length > 0;
           });
         const updated: IntegrationStatus = {
           provider,
           isDefault,
-          connected: hasAllConfig || (existing?.connected ?? false),
+          connected: (hasAllConfig && hasSecret) || (existing?.connected ?? false),
           hasRefreshToken: existing?.hasRefreshToken ?? false,
-          config,
+          config: nextConfig,
         };
         const rest = prev
           .filter((s) => s.provider !== provider)

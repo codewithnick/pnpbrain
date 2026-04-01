@@ -21,6 +21,21 @@ const EMBEDDING_CACHE_TTL_MS = 5 * 60_000;
 const EMBEDDING_CACHE_MAX_ENTRIES = 1000;
 const embeddingCache = new Map<string, EmbeddingCacheEntry>();
 
+const DEFAULT_KNOWLEDGE_EMBEDDING_DIMENSIONS = 1536;
+
+function getConfiguredEmbeddingDimensions(): number {
+  const configured = Number.parseInt(
+    process.env['KNOWLEDGE_EMBEDDING_DIMENSIONS'] ?? `${DEFAULT_KNOWLEDGE_EMBEDDING_DIMENSIONS}`,
+    10
+  );
+
+  if (Number.isNaN(configured) || configured < 1) {
+    return DEFAULT_KNOWLEDGE_EMBEDDING_DIMENSIONS;
+  }
+
+  return configured;
+}
+
 function buildEmbeddingCacheKey(query: string): string {
   const provider = process.env['EMBEDDING_PROVIDER'] ?? 'ollama';
   return `${provider}:${query.trim().toLowerCase()}`;
@@ -77,6 +92,20 @@ export function getEmbeddingModel(): Embeddings {
   return new OllamaEmbeddings({ baseUrl, model: 'nomic-embed-text' });
 }
 
+export function normalizeEmbeddingVector(vector: number[]): number[] {
+  const targetDimensions = getConfiguredEmbeddingDimensions();
+
+  if (vector.length === targetDimensions) {
+    return vector;
+  }
+
+  if (vector.length > targetDimensions) {
+    return vector.slice(0, targetDimensions);
+  }
+
+  return [...vector, ...new Array<number>(targetDimensions - vector.length).fill(0)];
+}
+
 export class RagService {
   constructor(
     private readonly dbProvider: () => DbClient = getDb,
@@ -111,7 +140,7 @@ export class RagService {
 
     if (!queryVector) {
       const [embeddedVector] = await embeddings.embedDocuments([query]);
-      queryVector = embeddedVector ?? null;
+      queryVector = embeddedVector ? normalizeEmbeddingVector(embeddedVector) : null;
       if (queryVector && queryVector.length > 0) {
         setCachedEmbedding(cacheKey, queryVector);
       }

@@ -32,6 +32,9 @@ const SKILL_NAMES = [
   'lead_qualification',
   'meeting_scheduler',
   'support_escalation',
+  'http_requests',
+  'web_preview',
+  'iframe_embed',
 ] as const;
 const POSITIONS = ['bottom-right', 'bottom-left'] as const;
 const THEMES = ['light', 'dark'] as const;
@@ -614,7 +617,7 @@ export class BusinessController {
 }
 
 function getBackendPublicUrl(): string {
-  return process.env['BACKEND_PUBLIC_URL'] ?? process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3001';
+  return process.env['BACKEND_PUBLIC_URL'] ?? process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3011';
 }
 
 function normalizeReturnTo(value: string | undefined): string | undefined {
@@ -631,7 +634,7 @@ function normalizeReturnTo(value: string | undefined): string | undefined {
 }
 
 function withOAuthStatus(returnTo: string | undefined, status: string): string {
-  const fallback = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3000/dashboard/settings/skills';
+  const fallback = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3010/dashboard/settings/skills';
   const target = normalizeReturnTo(returnTo) ?? fallback;
   const url = new URL(target);
   url.searchParams.set('oauth', status);

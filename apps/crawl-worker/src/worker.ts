@@ -1,4 +1,4 @@
-import { Worker, type Job } from 'bullmq';
+import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import path from 'node:path';
 import { config as loadDotenv } from 'dotenv';
@@ -48,6 +48,17 @@ function resolveRedisUrl(): string | null {
 const CRAWL_QUEUE = 'crawl-job';
 loadWorkerEnv();
 const redisUrl = resolveRedisUrl();
+
+function isPermanentCrawlFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes('crawl failed for all urls') ||
+    normalized.includes('no crawlable pages found') ||
+    normalized.includes('expected 1536 dimensions')
+  );
+}
 
 if (!redisUrl) {
   throw new Error('REDIS_URL or UPSTASH_REDIS_REST_* is required for crawl worker');
@@ -101,7 +112,15 @@ const worker = new Worker<CrawlJobData>(
       return;
     }
 
-    await processCrawlJob(record.id, record.businessId, record.agentId ?? undefined, urls);
+    try {
+      await processCrawlJob(record.id, record.businessId, record.agentId ?? undefined, urls);
+    } catch (error) {
+      if (isPermanentCrawlFailure(error)) {
+        throw new UnrecoverableError(error instanceof Error ? error.message : String(error));
+      }
+
+      throw error;
+    }
   },
   { connection, concurrency: Number.isNaN(concurrency) ? 3 : Math.max(1, concurrency) }
 );

@@ -31,6 +31,20 @@ export interface Agent {
   updatedAt: string;
 }
 
+export interface CustomAgentSkill {
+  id: string;
+  businessId: string;
+  agentId: string;
+  skillKey: string;
+  name: string;
+  description: string;
+  webhookUrl: string;
+  inputSchemaJson?: string | null;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DashboardUsage {
   credits: {
     used: number;

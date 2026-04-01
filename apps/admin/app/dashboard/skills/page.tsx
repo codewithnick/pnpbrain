@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { fetchBackend } from '@/lib/supabase';
 import { fetchAgents, resolveActiveAgent } from '@/lib/agents';
+import type { CustomAgentSkill } from '@/lib/api-types';
 
 const SKILLS = [
   {
@@ -48,11 +49,39 @@ const SKILLS = [
     description:
       'Lets the assistant raise a support ticket to your human team when it cannot confidently answer.',
   },
+  {
+    key: 'http_requests',
+    icon: '🌐',
+    title: 'HTTP Requests (Axios)',
+    description:
+      'Lets the agent make safe outbound HTTP requests (GET/POST/etc.) to your allowed domains for basic API lookups and status checks.',
+  },
+  {
+    key: 'web_preview',
+    icon: '📰',
+    title: 'Web Page Preview',
+    description:
+      'Fetches page metadata and a short text preview (title, description, snippet) from allowed domains.',
+  },
+  {
+    key: 'iframe_embed',
+    icon: '🖼️',
+    title: 'Iframe Embed Generator',
+    description:
+      'Generates safe iframe embed markup for allowed URLs so the assistant can provide embeddable page snippets.',
+  },
 ];
 
 export default function SkillsPage() {
+  type CustomSkillTestStatus = {
+    state: 'pass' | 'fail';
+    testedAt: number;
+    statusCode?: number;
+  };
+
   const [loading, setLoading] = useState(true);
   const [hasActiveAgent, setHasActiveAgent] = useState(true);
+  const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -74,7 +103,34 @@ export default function SkillsPage() {
   const [freshdeskDomain, setFreshdeskDomain] = useState('');
   const [freshdeskApiKey, setFreshdeskApiKey] = useState('');
   const [hasFreshdeskToken, setHasFreshdeskToken] = useState(false);
-  const [supportProvider, setSupportProvider] = useState<'none' | 'zendesk' | 'freshdesk'>('none');
+  const [jiraSiteUrl, setJiraSiteUrl] = useState('');
+  const [jiraProjectKey, setJiraProjectKey] = useState('');
+  const [jiraIssueType, setJiraIssueType] = useState('Task');
+  const [jiraSupportEmail, setJiraSupportEmail] = useState('');
+  const [jiraApiToken, setJiraApiToken] = useState('');
+  const [hasJiraToken, setHasJiraToken] = useState(false);
+  const [supportProvider, setSupportProvider] = useState<'none' | 'zendesk' | 'freshdesk' | 'jira'>('none');
+  const [customSkills, setCustomSkills] = useState<CustomAgentSkill[]>([]);
+  const [creatingCustomSkill, setCreatingCustomSkill] = useState(false);
+  const [newCustomName, setNewCustomName] = useState('');
+  const [newCustomKey, setNewCustomKey] = useState('');
+  const [newCustomDescription, setNewCustomDescription] = useState('');
+  const [newCustomWebhookUrl, setNewCustomWebhookUrl] = useState('');
+  const [newCustomInputSchema, setNewCustomInputSchema] = useState('');
+  const [testingCustomSkill, setTestingCustomSkill] = useState(false);
+  const [customSkillTestResult, setCustomSkillTestResult] = useState('');
+  const [testingCustomSkillId, setTestingCustomSkillId] = useState<string | null>(null);
+  const [customSkillTestStatusById, setCustomSkillTestStatusById] = useState<Record<string, CustomSkillTestStatus>>({});
+
+  async function loadCustomSkills(agentId: string) {
+    const res = await fetchBackend(`/api/agents/${agentId}/custom-skills`);
+    if (!res.ok) {
+      return;
+    }
+
+    const json = (await res.json().catch(() => ({}))) as { data?: CustomAgentSkill[] };
+    setCustomSkills(Array.isArray(json.data) ? json.data : []);
+  }
 
   useEffect(() => {
     (async () => {
@@ -87,6 +143,8 @@ export default function SkillsPage() {
       }
 
       setHasActiveAgent(true);
+      setActiveAgentId(active.id);
+      await loadCustomSkills(active.id);
 
       // Load data directly from agent record (no extra business/me call)
       const data = active as unknown as Record<string, unknown>;
@@ -117,8 +175,20 @@ export default function SkillsPage() {
             if (typeof config.domain === 'string') setFreshdeskDomain(config.domain);
           }
         }
+        const jira = integrations.find((integration) => integration.provider === 'jira');
+        if (jira) {
+          setHasJiraToken(Boolean(jira.connected));
+          if (jira.config && typeof jira.config === 'object') {
+            const config = jira.config as Record<string, unknown>;
+            if (typeof config.siteUrl === 'string') setJiraSiteUrl(config.siteUrl);
+            if (typeof config.projectKey === 'string') setJiraProjectKey(config.projectKey);
+            if (typeof config.issueType === 'string') setJiraIssueType(config.issueType);
+            if (typeof config.supportEmail === 'string') setJiraSupportEmail(config.supportEmail);
+          }
+        }
         if (zendesk?.connected) setSupportProvider('zendesk');
         else if (freshdesk?.connected) setSupportProvider('freshdesk');
+        else if (jira?.connected) setSupportProvider('jira');
       }
       if (data.meetingIntegration && typeof data.meetingIntegration === 'object') {
         const meeting = data.meetingIntegration as Record<string, unknown>;
@@ -201,6 +271,249 @@ export default function SkillsPage() {
     );
   }
 
+  async function createCustomSkill() {
+    if (!activeAgentId) return;
+    setError('');
+
+    if (!newCustomName.trim()) {
+      setError('Custom skill name is required');
+      return;
+    }
+
+    if (!newCustomWebhookUrl.trim()) {
+      setError('Custom skill webhook URL is required');
+      return;
+    }
+
+    let parsedInputSchema: Record<string, unknown> | undefined;
+    if (newCustomInputSchema.trim()) {
+      try {
+        const parsed = JSON.parse(newCustomInputSchema) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          setError('Custom input schema must be a JSON object');
+          return;
+        }
+        parsedInputSchema = parsed as Record<string, unknown>;
+      } catch {
+        setError('Custom input schema is not valid JSON');
+        return;
+      }
+    }
+
+    setCreatingCustomSkill(true);
+
+    const res = await fetchBackend(`/api/agents/${activeAgentId}/custom-skills`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: newCustomKey.trim() || undefined,
+        name: newCustomName.trim(),
+        description: newCustomDescription.trim() || undefined,
+        webhookUrl: newCustomWebhookUrl.trim(),
+        inputSchema: parsedInputSchema,
+        enabled: true,
+      }),
+    });
+
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(json.error ?? 'Failed to create custom skill');
+      setCreatingCustomSkill(false);
+      return;
+    }
+
+    const json = (await res.json()) as { data?: CustomAgentSkill };
+    if (json.data) {
+      const createdSkill = json.data as CustomAgentSkill;
+      setCustomSkills((prev) => [...prev, createdSkill]);
+      setCustomSkillTestStatusById((prev) => {
+        const draftStatus = prev.__draft__;
+        if (!draftStatus) return prev;
+
+        const next = { ...prev, [createdSkill.id]: draftStatus };
+        delete next.__draft__;
+        return next;
+      });
+    }
+    setNewCustomName('');
+    setNewCustomKey('');
+    setNewCustomDescription('');
+    setNewCustomWebhookUrl('');
+    setNewCustomInputSchema('');
+    setCreatingCustomSkill(false);
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
+  }
+
+  async function runCustomSkillWebhookTest(input: {
+    webhookUrl: string;
+    key?: string;
+    name?: string;
+    payload: Record<string, unknown>;
+    skillStatusKey?: string;
+  }) {
+    if (!activeAgentId) return;
+
+    const res = await fetchBackend(`/api/agents/${activeAgentId}/custom-skills/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webhookUrl: input.webhookUrl,
+        key: input.key,
+        name: input.name,
+        input: input.payload,
+      }),
+    });
+
+    const json = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      data?: { status?: number; responsePreview?: string };
+    };
+
+    const statusKey = input.skillStatusKey;
+    const testedAt = Date.now();
+
+    if (!res.ok || !json.ok) {
+      setError(json.error ?? 'Webhook test failed');
+      const preview = json.data?.responsePreview;
+      if (preview) {
+        setCustomSkillTestResult(preview);
+      }
+      if (statusKey) {
+        setCustomSkillTestStatusById((prev) => ({
+          ...prev,
+          [statusKey]: {
+            state: 'fail',
+            testedAt,
+            ...(json.data?.status !== undefined ? { statusCode: json.data.status } : {}),
+          },
+        }));
+      }
+      return;
+    }
+
+    const preview = json.data?.responsePreview ?? 'Webhook returned an empty response body.';
+    setCustomSkillTestResult(preview);
+    if (statusKey) {
+      setCustomSkillTestStatusById((prev) => ({
+        ...prev,
+        [statusKey]: {
+          state: 'pass',
+          testedAt,
+          ...(json.data?.status !== undefined ? { statusCode: json.data.status } : {}),
+        },
+      }));
+    }
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
+  }
+
+  async function testCustomSkillWebhook() {
+    if (!activeAgentId) return;
+    setError('');
+    setCustomSkillTestResult('');
+
+    if (!newCustomWebhookUrl.trim()) {
+      setError('Custom skill webhook URL is required for testing');
+      return;
+    }
+
+    let parsedInput: Record<string, unknown> = { example: 'test' };
+    if (newCustomInputSchema.trim()) {
+      try {
+        const parsed = JSON.parse(newCustomInputSchema) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          setError('Custom input schema must be a JSON object');
+          return;
+        }
+        parsedInput = parsed as Record<string, unknown>;
+      } catch {
+        setError('Custom input schema is not valid JSON');
+        return;
+      }
+    }
+
+    setTestingCustomSkill(true);
+    const key = newCustomKey.trim();
+    const name = newCustomName.trim();
+    await runCustomSkillWebhookTest({
+      webhookUrl: newCustomWebhookUrl.trim(),
+      ...(key ? { key } : {}),
+      ...(name ? { name } : {}),
+      payload: parsedInput,
+      skillStatusKey: '__draft__',
+    });
+    setTestingCustomSkill(false);
+  }
+
+  async function testSavedCustomSkillWebhook(skill: CustomAgentSkill) {
+    if (!activeAgentId) return;
+    setError('');
+    setTestingCustomSkillId(skill.id);
+
+    let parsedInput: Record<string, unknown> = { example: 'test' };
+    if (skill.inputSchemaJson) {
+      try {
+        const parsed = JSON.parse(skill.inputSchemaJson) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          parsedInput = parsed as Record<string, unknown>;
+        }
+      } catch {
+        parsedInput = { example: 'test' };
+      }
+    }
+
+    await runCustomSkillWebhookTest({
+      webhookUrl: skill.webhookUrl,
+      key: skill.skillKey,
+      name: skill.name,
+      payload: parsedInput,
+      skillStatusKey: skill.id,
+    });
+
+    setTestingCustomSkillId(null);
+  }
+
+  async function toggleCustomSkillEnabled(skill: CustomAgentSkill) {
+    if (!activeAgentId) return;
+    setError('');
+
+    const res = await fetchBackend(`/api/agents/${activeAgentId}/custom-skills/${skill.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !skill.enabled }),
+    });
+
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(json.error ?? 'Failed to update custom skill');
+      return;
+    }
+
+    const json = (await res.json()) as { data?: CustomAgentSkill };
+    if (json.data) {
+      setCustomSkills((prev) => prev.map((item) => (item.id === skill.id ? json.data as CustomAgentSkill : item)));
+    }
+  }
+
+  async function deleteCustomSkillById(skill: CustomAgentSkill) {
+    if (!activeAgentId) return;
+    setError('');
+
+    const res = await fetchBackend(`/api/agents/${activeAgentId}/custom-skills/${skill.id}`, {
+      method: 'DELETE',
+    });
+
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(json.error ?? 'Failed to delete custom skill');
+      return;
+    }
+
+    setCustomSkills((prev) => prev.filter((item) => item.id !== skill.id));
+  }
+
   const normalizedSkillSearch = skillSearch.trim().toLowerCase();
   const filteredSkills = SKILLS.filter((skill) => {
     if (!normalizedSkillSearch) return true;
@@ -257,6 +570,7 @@ export default function SkillsPage() {
 
     if (enabledSkills.includes('support_escalation') && supportProvider !== 'none') {
       const isFreshdesk = supportProvider === 'freshdesk';
+      const isJira = supportProvider === 'jira';
       const integrationRes = await fetchBackend(
         `/api/business/me/integrations/${supportProvider}`,
         {
@@ -268,6 +582,16 @@ export default function SkillsPage() {
                   ...(freshdeskApiKey.trim().length > 0 ? { accessToken: freshdeskApiKey.trim() } : {}),
                   config: { domain: freshdeskDomain.trim() },
                 }
+              : isJira
+                ? {
+                    ...(jiraApiToken.trim().length > 0 ? { accessToken: jiraApiToken.trim() } : {}),
+                    config: {
+                      siteUrl: jiraSiteUrl.trim(),
+                      projectKey: jiraProjectKey.trim(),
+                      issueType: jiraIssueType.trim() || 'Task',
+                      supportEmail: jiraSupportEmail.trim(),
+                    },
+                  }
               : {
                   ...(zendeskApiToken.trim().length > 0 ? { accessToken: zendeskApiToken.trim() } : {}),
                   config: {
@@ -282,13 +606,17 @@ export default function SkillsPage() {
       if (!integrationRes.ok) {
         setSaving(false);
         const json = (await integrationRes.json().catch(() => ({}))) as { error?: string };
-        setError(json.error ?? `Failed to save ${isFreshdesk ? 'Freshdesk' : 'Zendesk'} integration`);
+        const label = isFreshdesk ? 'Freshdesk' : isJira ? 'Jira' : 'Zendesk';
+        setError(json.error ?? `Failed to save ${label} integration`);
         return;
       }
 
       if (isFreshdesk) {
         setHasFreshdeskToken(hasFreshdeskToken || freshdeskApiKey.trim().length > 0);
         setFreshdeskApiKey('');
+      } else if (isJira) {
+        setHasJiraToken(hasJiraToken || jiraApiToken.trim().length > 0);
+        setJiraApiToken('');
       } else {
         setHasZendeskToken(hasZendeskToken || zendeskApiToken.trim().length > 0);
         setZendeskApiToken('');
@@ -396,6 +724,150 @@ export default function SkillsPage() {
                 No skills match your search.
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Custom webhook skills</h3>
+            <p className="text-xs text-gray-500 dark:text-slate-400">
+              Add your own skill as a webhook endpoint. The agent sends structured JSON and uses the returned output in responses.
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <input
+              type="text"
+              value={newCustomName}
+              onChange={(e) => setNewCustomName(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              placeholder="Skill name (e.g. Estimate Shipping)"
+            />
+            <input
+              type="text"
+              value={newCustomKey}
+              onChange={(e) => setNewCustomKey(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              placeholder="Optional key (e.g. estimate_shipping)"
+            />
+          </div>
+
+          <input
+            type="url"
+            value={newCustomWebhookUrl}
+            onChange={(e) => setNewCustomWebhookUrl(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            placeholder="Webhook URL (https://api.example.com/gcfis/custom-skill)"
+          />
+
+          <textarea
+            value={newCustomDescription}
+            onChange={(e) => setNewCustomDescription(e.target.value)}
+            rows={2}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 resize-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            placeholder="What this skill does and when the AI should call it"
+          />
+
+          <textarea
+            value={newCustomInputSchema}
+            onChange={(e) => setNewCustomInputSchema(e.target.value)}
+            rows={4}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 resize-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            placeholder={'Optional input schema JSON\n{"customerId":"string","priority":"string"}'}
+          />
+
+          <div className="flex justify-end">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={testCustomSkillWebhook}
+                disabled={testingCustomSkill || !activeAgentId}
+                className="px-4 py-2 rounded-lg border border-slate-600 text-slate-200 text-sm font-semibold hover:bg-slate-800 disabled:opacity-50"
+              >
+                {testingCustomSkill ? 'Testing...' : 'Test webhook'}
+              </button>
+              <button
+                type="button"
+                onClick={createCustomSkill}
+                disabled={creatingCustomSkill || !activeAgentId}
+                className="px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-semibold hover:bg-brand-600 disabled:opacity-50"
+              >
+                {creatingCustomSkill ? 'Adding...' : 'Add custom skill'}
+              </button>
+            </div>
+          </div>
+
+          {customSkillTestResult && (
+            <div className="rounded-lg border border-slate-700 bg-slate-950 p-3">
+              <p className="text-xs text-slate-400 mb-1">Webhook test response</p>
+              <pre className="text-xs text-slate-200 whitespace-pre-wrap break-words">{customSkillTestResult}</pre>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {customSkills.length === 0 && (
+              <div className="rounded-lg border border-dashed border-slate-700 bg-slate-900/60 px-4 py-3 text-xs text-slate-400">
+                No custom skills yet.
+              </div>
+            )}
+
+            {customSkills.map((skill) => {
+              const testStatus = customSkillTestStatusById[skill.id];
+
+              return (
+              <div key={skill.id} className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-slate-100">{skill.name}</p>
+                      {testStatus && (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            testStatus.state === 'pass'
+                              ? 'bg-emerald-900/50 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-red-900/40 text-red-300 border border-red-500/30'
+                          }`}
+                        >
+                          {testStatus.state === 'pass' ? 'Test passed' : 'Test failed'}
+                          {testStatus.statusCode !== undefined
+                            ? ` (${testStatus.statusCode})`
+                            : ''}
+                          {` ${new Date(testStatus.testedAt).toLocaleTimeString()}`}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5 font-mono">{skill.skillKey}</p>
+                    {skill.description && <p className="text-xs text-slate-300 mt-1">{skill.description}</p>}
+                    <p className="text-xs text-slate-400 mt-1 font-mono break-all">{skill.webhookUrl}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => testSavedCustomSkillWebhook(skill)}
+                      disabled={testingCustomSkillId === skill.id || !activeAgentId}
+                      className="px-3 py-1.5 rounded text-xs font-semibold border border-slate-600 text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {testingCustomSkillId === skill.id ? 'Testing...' : 'Test'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleCustomSkillEnabled(skill)}
+                      className={`px-3 py-1.5 rounded text-xs font-semibold ${skill.enabled ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-200'}`}
+                    >
+                      {skill.enabled ? 'Enabled' : 'Disabled'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteCustomSkillById(skill)}
+                      className="px-3 py-1.5 rounded text-xs font-semibold border border-red-500/40 text-red-300 hover:bg-red-900/30"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );})}
           </div>
         </div>
 
@@ -536,7 +1008,7 @@ export default function SkillsPage() {
           <div>
             <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Support integration</h3>
             <p className="text-xs text-gray-500 dark:text-slate-400">
-              Connect Zendesk or Freshdesk so the agent can escalate unresolved requests as support tickets.
+              Connect Zendesk, Freshdesk, or Jira so the agent can escalate unresolved requests as support tickets.
             </p>
           </div>
 
@@ -550,13 +1022,14 @@ export default function SkillsPage() {
             <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Provider</label>
             <select
               value={supportProvider}
-              onChange={(e) => setSupportProvider(e.target.value as 'none' | 'zendesk' | 'freshdesk')}
+              onChange={(e) => setSupportProvider(e.target.value as 'none' | 'zendesk' | 'freshdesk' | 'jira')}
               disabled={!enabledSkills.includes('support_escalation')}
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             >
               <option value="none">Not connected</option>
               <option value="zendesk">Zendesk</option>
               <option value="freshdesk">Freshdesk</option>
+              <option value="jira">Jira</option>
             </select>
           </div>
 
@@ -631,6 +1104,73 @@ export default function SkillsPage() {
                 />
                 <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                   {hasFreshdeskToken ? 'A key is already stored securely.' : 'No key configured yet. Find it under Profile Settings in Freshdesk.'}
+                </p>
+              </div>
+            </>
+          )}
+
+          {supportProvider === 'jira' && (
+            <>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Jira site URL</label>
+                <input
+                  type="url"
+                  value={jiraSiteUrl}
+                  onChange={(e) => setJiraSiteUrl(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="https://your-team.atlassian.net"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Jira project key</label>
+                <input
+                  type="text"
+                  value={jiraProjectKey}
+                  onChange={(e) => setJiraProjectKey(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="SUP"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Jira issue type</label>
+                <input
+                  type="text"
+                  value={jiraIssueType}
+                  onChange={(e) => setJiraIssueType(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="Task"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Jira email</label>
+                <input
+                  type="email"
+                  value={jiraSupportEmail}
+                  onChange={(e) => setJiraSupportEmail(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="support@company.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Jira API token</label>
+                <input
+                  type="password"
+                  value={jiraApiToken}
+                  onChange={(e) => setJiraApiToken(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder={hasJiraToken ? 'Saved (enter to rotate)' : 'Paste Jira API token'}
+                />
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                  {hasJiraToken ? 'A token is already stored securely.' : 'No token configured yet.'}
                 </p>
               </div>
             </>

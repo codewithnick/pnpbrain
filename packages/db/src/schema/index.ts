@@ -14,3 +14,5 @@ export * from './conversations';
 export * from './memory';
 export * from './firecrawl_jobs';
 export * from './support_tickets';
+export * from './lead_handoffs';
+export * from './custom_agent_skills';

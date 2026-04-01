@@ -25,12 +25,12 @@ export function getSupabaseBrowserClient(): SupabaseClient {
 }
 
 export function getBackendUrl(): string {
-  return process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3001';
+  return process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3011';
 }
 
 function buildBackendRequestUrl(path: string): string {
   const backendUrl = getBackendUrl().trim();
-  const baseUrl = backendUrl.length > 0 ? backendUrl : 'http://localhost:3001';
+  const baseUrl = backendUrl.length > 0 ? backendUrl : 'http://localhost:3011';
 
   // Build URL safely for both absolute and relative API paths.
   return new URL(path, baseUrl).toString();

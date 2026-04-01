@@ -2,7 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
 import { MemoryService } from '@gcfis/agent/memory';
-import { chunkText, getEmbeddingModel } from '@gcfis/agent/rag';
+import { chunkText, getEmbeddingModel, normalizeEmbeddingVector } from '@gcfis/agent/rag';
 
 type CrawledPage = {
   url: string;
@@ -11,7 +11,6 @@ type CrawledPage = {
 };
 
 type CrawlDomainPolicy = {
-  allowedDomains: string[];
   blockedDomains: string[];
 };
 
@@ -35,7 +34,6 @@ function parseCsvList(value?: string): string[] {
 
 function buildDomainPolicy(): CrawlDomainPolicy {
   return {
-    allowedDomains: parseCsvList(process.env['CRAWL_ALLOWED_DOMAINS']),
     blockedDomains: parseCsvList(process.env['CRAWL_BLOCKED_DOMAINS']),
   };
 }
@@ -60,11 +58,7 @@ function isDomainAllowed(url: URL, policy: CrawlDomainPolicy): boolean {
     return false;
   }
 
-  if (policy.allowedDomains.length === 0) {
-    return true;
-  }
-
-  return policy.allowedDomains.some((rule) => hostMatchesRule(host, rule));
+  return true;
 }
 
 function parseRobotsTxt(content: string, userAgent: string): RobotsRules {
@@ -490,6 +484,13 @@ export async function processCrawlJob(
             )
           );
 
+        const chunks = chunkText(page.markdown);
+        if (chunks.length === 0) {
+          continue;
+        }
+
+        const vectors = await embeddings.embedDocuments(chunks.map((chunk) => chunk.content));
+
         const [doc] = await db
           .insert(knowledgeDocuments)
           .values({
@@ -504,13 +505,6 @@ export async function processCrawlJob(
         ingestedPages += 1;
         ingestedTitles.push(page.title);
 
-        const chunks = chunkText(page.markdown);
-        if (chunks.length === 0) {
-          continue;
-        }
-
-        const vectors = await embeddings.embedDocuments(chunks.map((chunk) => chunk.content));
-
         await db.insert(knowledgeChunks).values(
           chunks.map((chunk, index) => ({
             documentId: doc!.id,
@@ -518,7 +512,7 @@ export async function processCrawlJob(
             agentId,
             content: chunk.content,
             chunkIndex: chunk.index,
-            embedding: vectors[index] ?? [],
+            embedding: normalizeEmbeddingVector(vectors[index] ?? []),
           }))
         );
       }

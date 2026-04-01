@@ -4,9 +4,9 @@
   "private": true,
   "description": "PNPBrain Admin Dashboard — Next.js with API routes for admin operations",
   "scripts": {
-    "dev": "next dev --port 3002",
+    "dev": "next dev --port 3012",
     "build": "next build",
-    "start": "next start --port 3002",
+    "start": "next start --port 3012",
     "lint": "echo 'Skipping ESLint for Next.js app'",
     "type-check": "tsc --noEmit",
     "clean": "rimraf .next"

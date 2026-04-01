@@ -8,6 +8,9 @@ export const SKILL_NAMES = [
   'lead_qualification',
   'meeting_scheduler',
   'support_escalation',
+  'http_requests',
+  'web_preview',
+  'iframe_embed',
 ] as const;
 
 export type SkillName = (typeof SKILL_NAMES)[number];

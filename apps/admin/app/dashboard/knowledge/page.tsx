@@ -220,12 +220,12 @@ export default function KnowledgePage() {
             <input
               id="knowledge-file-input"
               type="file"
-              accept=".txt,.md,.json,.csv,.xml,text/plain,text/markdown,application/json,text/csv,application/xml,text/xml"
+              accept="*/*"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className="block w-full text-sm text-gray-700 dark:text-slate-200"
             />
             <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
-              Supports UTF-8 text files. If you do not upload a file, pasted content below will be used.
+                Any file type can be uploaded. The backend will extract text when possible, store the original file in S3, and fall back to pasted content below if you do not upload a file.
             </p>
           </div>
 

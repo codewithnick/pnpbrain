@@ -43,7 +43,7 @@ export class BillingController {
       data: { user },
     } = await supabase.auth.admin.getUserById(auth.userId);
 
-    const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3002';
+    const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3012';
     const returnUrl = `${adminUrl}/dashboard/settings/billing`;
 
     try {
@@ -93,7 +93,7 @@ export class BillingController {
       return res.status(400).json({ ok: false, error: 'No active subscription found. Please subscribe first.' });
     }
 
-    const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3002';
+    const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3012';
     const returnUrl = `${adminUrl}/dashboard/settings/billing`;
 
     try {

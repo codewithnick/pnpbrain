@@ -81,6 +81,12 @@ interface FreshdeskTicketResponse {
   id?: number;
 }
 
+interface JiraIssueResponse {
+  id?: string;
+  key?: string;
+  self?: string;
+}
+
 async function createFreshdeskTicket(args: {
   domain: string;
   apiKey: string;
@@ -122,6 +128,66 @@ async function createFreshdeskTicket(args: {
   };
 }
 
+async function createJiraTicket(args: {
+  siteUrl: string;
+  projectKey: string;
+  issueType: string;
+  apiToken: string;
+  email: string;
+  subject: string;
+  body: string;
+  customerEmail?: string;
+  customerName?: string;
+}): Promise<{ ticketId?: string; ticketUrl?: string }> {
+  const siteUrl = args.siteUrl.replace(/\/$/, '');
+  const endpoint = `${siteUrl}/rest/api/3/issue`;
+  const auth = Buffer.from(`${args.email}:${args.apiToken}`).toString('base64');
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Basic ${auth}`,
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      fields: {
+        project: { key: args.projectKey },
+        summary: args.subject,
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  text: args.body,
+                },
+              ],
+            },
+          ],
+        },
+        issuetype: { name: args.issueType },
+        labels: ['gcfis', 'agent_escalation'],
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Jira ticket creation failed (${response.status}): ${text.slice(0, 300)}`);
+  }
+
+  const payload = (await response.json()) as JiraIssueResponse;
+  const ticketKey = payload.key ?? payload.id;
+  return {
+    ...(ticketKey ? { ticketId: ticketKey } : {}),
+    ...(ticketKey ? { ticketUrl: `${siteUrl}/browse/${ticketKey}` } : {}),
+  };
+}
+
 export async function createSupportTicket(input: CreateSupportTicketInput): Promise<CreateSupportTicketResult> {
   const db = getDb();
   const integration = await getSupportIntegrationForAgentScope({
@@ -129,7 +195,7 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
     ...(input.agentId ? { agentId: input.agentId } : {}),
   });
 
-  const SUPPORTED_PROVIDERS = new Set(['zendesk', 'freshdesk']);
+  const SUPPORTED_PROVIDERS = new Set(['zendesk', 'freshdesk', 'jira']);
   if (!SUPPORTED_PROVIDERS.has(integration.provider)) {
     await db.insert(supportTickets).values({
       businessId: input.businessId,
@@ -142,14 +208,14 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
       customerName: input.customerName,
       customerMessage: input.customerMessage,
       assistantMessage: input.assistantMessage,
-      errorMessage: 'Support integration not configured. Enable support_escalation skill and connect Zendesk or Freshdesk.',
+      errorMessage: 'Support integration not configured. Enable support_escalation skill and connect Zendesk, Freshdesk, or Jira.',
       metadata: input.metadata,
     });
 
     return {
       status: 'failed',
       provider: integration.provider,
-      message: 'Support integration not configured. Enable support_escalation skill and connect Zendesk or Freshdesk.',
+      message: 'Support integration not configured. Enable support_escalation skill and connect Zendesk, Freshdesk, or Jira.',
     };
   }
 
@@ -159,6 +225,18 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
     if (integration.provider === 'freshdesk') {
       if (typeof integration.config?.['domain'] !== 'string' || !integration.config['domain'].trim()) {
         return 'Freshdesk domain is required.';
+      }
+      return null;
+    }
+    if (integration.provider === 'jira') {
+      if (typeof integration.config?.siteUrl !== 'string' || !integration.config.siteUrl.trim()) {
+        return 'Jira site URL is required.';
+      }
+      if (typeof integration.config?.projectKey !== 'string' || !integration.config.projectKey.trim()) {
+        return 'Jira project key is required.';
+      }
+      if (typeof integration.config?.supportEmail !== 'string' || !integration.config.supportEmail.trim()) {
+        return 'Jira email address is required.';
       }
       return null;
     }
@@ -214,6 +292,19 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
         return createFreshdeskTicket({
           domain: (integration.config!['domain'] as string).trim(),
           apiKey: integration.accessToken!,
+          subject,
+          body,
+          ...(input.customerEmail ? { customerEmail: input.customerEmail } : {}),
+          ...(input.customerName ? { customerName: input.customerName } : {}),
+        });
+      }
+      if (integration.provider === 'jira') {
+        return createJiraTicket({
+          siteUrl: (integration.config!.siteUrl as string).trim(),
+          projectKey: (integration.config!.projectKey as string).trim(),
+          issueType: (integration.config!.issueType as string | undefined)?.trim() || 'Task',
+          apiToken: integration.accessToken!,
+          email: (integration.config!.supportEmail as string).trim(),
           subject,
           body,
           ...(input.customerEmail ? { customerEmail: input.customerEmail } : {}),

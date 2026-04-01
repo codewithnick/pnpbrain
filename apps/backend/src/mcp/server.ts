@@ -43,10 +43,12 @@ import {
   setEnabledSkillsForAgent,
   upsertIntegrationForAgent,
 } from '../lib/businessSkills';
+import { getEnabledCustomWebhookSkillsForAgentScope } from '../lib/customSkills';
 import { recordMessageUsage } from '../lib/billing';
 import { enqueueCrawlJob } from '../jobs/crawlQueue';
 import { processCrawlJob } from '../jobs/crawlRunner';
 import { createSupportTicket } from '../lib/supportTickets';
+import { createLeadHandoff } from '../lib/leadHandoffs';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 function sanitizeAssistantReply(text: string): string {
@@ -97,6 +99,14 @@ function getCrawlErrorHint(errorMessage: string | null): string | null {
 
   if (normalized.includes('fetch failed') || normalized.includes('econnrefused')) {
     return 'Network connectivity failed during crawling. Check outbound access and DNS from the worker environment.';
+  }
+
+  if (normalized.includes('expected 1536 dimensions')) {
+    return 'Embedding model dimensions do not match database schema. Align embedding output size with knowledge_chunks.embedding vector(1536), or migrate schema/model together.';
+  }
+
+  if (normalized.includes('no crawlable pages found')) {
+    return 'No crawlable content was discovered. Check robots.txt restrictions, content-type (HTML/text), domain policy allow/deny lists, and URL accessibility from the worker environment.';
   }
 
   return null;
@@ -166,6 +176,7 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
       welcomeMessage: agent.welcomeMessage,
       allowedDomains,
       enabledSkills: await getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
+      customSkills: await getEnabledCustomWebhookSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
       llmProvider,
       llmModel,
       widgetPosition: agent.widgetPosition,
@@ -188,159 +199,234 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
         .describe('Conversation thread ID to continue. Omit to start a new conversation.'),
     },
     async ({ message, threadId }) => {
-      // Resolve or create conversation
-      let conversationId: string;
-
-      if (threadId) {
-        const [existing] = await db
-          .select({ id: conversations.id, businessId: conversations.businessId, agentId: conversations.agentId })
-          .from(conversations)
-          .where(eq(conversations.id, threadId))
-          .limit(1);
-
-        if (!existing) {
-          return { content: [{ type: 'text', text: 'Error: thread not found.' }], isError: true };
-        }
-
-        if (existing.businessId !== business.id) {
-          return {
-            content: [{ type: 'text', text: 'Error: thread does not belong to this business.' }],
-            isError: true,
-          };
-        }
-
-        if (existing.agentId && existing.agentId !== agent.id) {
-          return {
-            content: [{ type: 'text', text: 'Error: thread does not belong to this agent.' }],
-            isError: true,
-          };
-        }
-
-        conversationId = existing.id;
-      } else {
-        const [newConversation] = await db
-          .insert(conversations)
-          .values({ businessId: business.id, agentId: agent.id, sessionId: crypto.randomUUID() })
-          .returning({ id: conversations.id });
-        conversationId = newConversation!.id;
-      }
-
-      // Persist user message
-      await db.insert(messages).values({ conversationId, role: 'user', content: message });
-
-      // Run agent and collect full response
-      const [enabledSkills, meetingIntegration, supportIntegration] = await Promise.all([
-        getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
-        getMeetingIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
-        getSupportIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
-      ]);
-
-      const historyRows = await db
-        .select({ role: messages.role, content: messages.content })
-        .from(messages)
-        .where(eq(messages.conversationId, conversationId))
-        .orderBy(asc(messages.createdAt));
-
-      const conversationHistory = historyRows
-        .filter((row): row is { role: 'user' | 'assistant' | 'system'; content: string } =>
-          row.role === 'user' || row.role === 'assistant' || row.role === 'system'
-        )
-        .slice(-21);
-
-      const normalizedHistory =
-        conversationHistory.length > 0
-        && conversationHistory[conversationHistory.length - 1]?.role === 'user'
-        && conversationHistory[conversationHistory.length - 1]?.content === message
-          ? conversationHistory.slice(0, -1)
-          : conversationHistory;
-
-      const graphInput = {
-        businessId: business.id,
-        agentId: agent.id,
-        conversationId,
-        botName: agent.botName,
-        businessName: business.name,
-        allowedDomains,
-        userMessage: message,
-        conversationHistory: normalizedHistory.slice(-20),
-        enabledSkills,
-        meetingIntegration: meetingIntegration as unknown as Record<string, unknown>,
-        supportIntegration: supportIntegration as unknown as Record<string, unknown>,
-        createSupportTicket: async (payload: {
-          reason: string;
-          customerMessage: string;
-          customerEmail?: string;
-          customerName?: string;
-        }) =>
-          createSupportTicket({
-            businessId: business.id,
-            agentId: agent.id,
-            conversationId,
-            reason: payload.reason,
-            customerMessage: payload.customerMessage,
-            ...(payload.customerEmail ? { customerEmail: payload.customerEmail } : {}),
-            ...(payload.customerName ? { customerName: payload.customerName } : {}),
-            metadata: {
-              source: 'mcp_agent_tool',
-            },
-          }),
-        llmProvider,
-        llmModel,
-        ...(llmApiKey ? { llmApiKey } : {}),
-        ...(llmBaseUrl ? { llmBaseUrl } : {}),
-      };
-
-      let fullResponse = '';
       try {
+        // Resolve or create conversation
+        let conversationId: string;
+        console.log('[MCP/chat] START - message:', message.substring(0, 80) + '...');
+
+        if (threadId) {
+          console.log('[MCP/chat] Using existing thread:', threadId);
+          const [existing] = await db
+            .select({ id: conversations.id, businessId: conversations.businessId, agentId: conversations.agentId })
+            .from(conversations)
+            .where(eq(conversations.id, threadId))
+            .limit(1);
+
+          if (!existing) {
+            console.log('[MCP/chat] ERROR - thread not found');
+            return { content: [{ type: 'text', text: 'Error: thread not found.' }], isError: true };
+          }
+
+          if (existing.businessId !== business.id) {
+            console.log('[MCP/chat] ERROR - thread business mismatch');
+            return {
+              content: [{ type: 'text', text: 'Error: thread does not belong to this business.' }],
+              isError: true,
+            };
+          }
+
+          if (existing.agentId && existing.agentId !== agent.id) {
+            console.log('[MCP/chat] ERROR - thread agent mismatch');
+            return {
+              content: [{ type: 'text', text: 'Error: thread does not belong to this agent.' }],
+              isError: true,
+            };
+          }
+
+          conversationId = existing.id;
+        } else {
+          console.log('[MCP/chat] Creating new conversation');
+          const [newConversation] = await db
+            .insert(conversations)
+            .values({ businessId: business.id, agentId: agent.id, sessionId: crypto.randomUUID() })
+            .returning({ id: conversations.id });
+          conversationId = newConversation!.id;
+          console.log('[MCP/chat] New conversation created:', conversationId);
+        }
+
+        // Persist user message
+        console.log('[MCP/chat] Persisting user message');
+        await db.insert(messages).values({ conversationId, role: 'user', content: message });
+
+        // Run agent and collect full response
+        console.log('[MCP/chat] Fetching enabled skills and integrations');
+        const [enabledSkills, customSkills, meetingIntegration, supportIntegration] = await Promise.all([
+          getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
+          getEnabledCustomWebhookSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
+          getMeetingIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
+          getSupportIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
+        ]);
+        console.log('[MCP/chat] Enabled skills:', enabledSkills);
+
+        const historyRows = await db
+          .select({ role: messages.role, content: messages.content })
+          .from(messages)
+          .where(eq(messages.conversationId, conversationId))
+          .orderBy(asc(messages.createdAt));
+
+        const conversationHistory = historyRows
+          .filter((row): row is { role: 'user' | 'assistant' | 'system'; content: string } =>
+            row.role === 'user' || row.role === 'assistant' || row.role === 'system'
+          )
+          .slice(-21);
+
+        const normalizedHistory =
+          conversationHistory.length > 0
+          && conversationHistory[conversationHistory.length - 1]?.role === 'user'
+          && conversationHistory[conversationHistory.length - 1]?.content === message
+            ? conversationHistory.slice(0, -1)
+            : conversationHistory;
+
+        const graphInput = {
+          businessId: business.id,
+          agentId: agent.id,
+          conversationId,
+          botName: agent.botName,
+          businessName: business.name,
+          allowedDomains,
+          userMessage: message,
+          conversationHistory: normalizedHistory.slice(-20),
+          enabledSkills,
+          customSkills,
+          meetingIntegration: meetingIntegration as unknown as Record<string, unknown>,
+          supportIntegration: supportIntegration as unknown as Record<string, unknown>,
+          createSupportTicket: async (payload: {
+            reason: string;
+            customerMessage: string;
+            customerEmail?: string;
+            customerName?: string;
+          }) =>
+            createSupportTicket({
+              businessId: business.id,
+              agentId: agent.id,
+              conversationId,
+              reason: payload.reason,
+              customerMessage: payload.customerMessage,
+              ...(payload.customerEmail ? { customerEmail: payload.customerEmail } : {}),
+              ...(payload.customerName ? { customerName: payload.customerName } : {}),
+              metadata: {
+                source: 'mcp_agent_tool',
+              },
+            }),
+          createLeadHandoff: async (payload: {
+            reason: string;
+            qualificationScore?: number;
+            qualificationStage?: 'nurture' | 'mql' | 'sql';
+            customerMessage: string;
+            summary: string;
+            customerEmail?: string;
+            customerName?: string;
+            companyName?: string;
+          }) =>
+            createLeadHandoff({
+              businessId: business.id,
+              agentId: agent.id,
+              conversationId,
+              reason: payload.reason,
+              ...(payload.qualificationScore !== undefined
+                ? { qualificationScore: payload.qualificationScore }
+                : {}),
+              ...(payload.qualificationStage !== undefined
+                ? { qualificationStage: payload.qualificationStage }
+                : {}),
+              customerMessage: payload.customerMessage,
+              summary: payload.summary,
+              ...(payload.customerEmail ? { customerEmail: payload.customerEmail } : {}),
+              ...(payload.customerName ? { customerName: payload.customerName } : {}),
+              ...(payload.companyName ? { companyName: payload.companyName } : {}),
+              metadata: {
+                source: 'mcp_agent_tool',
+              },
+            }),
+          llmProvider,
+          llmModel,
+          ...(llmApiKey ? { llmApiKey } : {}),
+          ...(llmBaseUrl ? { llmBaseUrl } : {}),
+        };
+
+        let fullResponse = '';
+        console.log('[MCP/chat] 🚀 Running graph with input - skills:', enabledSkills);
         const graphStream = runGraph(graphInput);
+        let eventCount = 0;
         for await (const event of graphStream) {
+          eventCount++;
+          console.log(`[MCP/chat] 📊 Event #${eventCount}: ${event.event}`);
+          const eventData = (event.data ?? {}) as Record<string, unknown>;
+          
           if (event.event === 'on_chat_model_stream') {
             const chunk = event.data?.chunk;
             if (chunk && typeof chunk === 'object' && 'content' in chunk) {
               const token = chunk.content as string;
-              if (token) fullResponse += token;
+              if (token) {
+                fullResponse += token;
+                console.log('[MCP/chat]   📝 Token:', token.substring(0, 50));
+              }
             }
           }
+          
+          if (event.event === 'on_tool_start') {
+            console.log('[MCP/chat] 🔧 TOOL STARTED:', eventData['tool'] ?? 'unknown');
+            console.log('[MCP/chat]   Input:', JSON.stringify(eventData['input'] ?? {}).substring(0, 100));
+          }
+          
+          if (event.event === 'on_tool_end') {
+            console.log('[MCP/chat] ✅ TOOL FINISHED:', eventData['tool'] ?? 'unknown');
+            console.log('[MCP/chat]   Output:', JSON.stringify(eventData['output'] ?? '').substring(0, 100));
+          }
+          
+          if (event.event === 'on_tool_error') {
+            console.log('[MCP/chat] ❌ TOOL ERROR:', eventData['tool'] ?? 'unknown');
+            console.log('[MCP/chat]   Error:', eventData['error'] ?? 'unknown');
+          }
         }
+        console.log('[MCP/chat] ✅ Graph stream complete - events received:', eventCount);
+
+        fullResponse = sanitizeAssistantReply(fullResponse);
+        if (!fullResponse) {
+          fullResponse =
+            'I do not have enough verified company data for a specific answer yet. Could you share one more detail?';
+        }
+
+        // Persist assistant reply
+        console.log('[MCP/chat] 💾 Persisting response (length:', fullResponse.length, ')');
+        await db
+          .insert(messages)
+          .values({ conversationId, role: 'assistant', content: fullResponse });
+
+        // Background: memory extraction
+        console.log('[MCP/chat] 📚 Queuing memory extraction');
+        extractAndSaveMemory({
+          businessId: business.id,
+          agentId: agent.id,
+          conversationId,
+          userMessage: message,
+          assistantResponse: fullResponse,
+        }).catch((err) => console.error('[MCP/chat] memory extraction failed:', err));
+
+        recordMessageUsage(business).catch((err: unknown) =>
+          console.error('[MCP/chat] usage recording failed:', err)
+        );
+
+        console.log('[MCP/chat] ✨ COMPLETE - returning response to client');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: fullResponse,
+            },
+          ],
+          // Return threadId so the client can chain follow-up messages
+          _meta: { threadId: conversationId },
+        };
       } catch (err) {
+        console.error('[MCP/chat] 💥 FATAL ERROR:', err);
         const msg = err instanceof Error ? err.message : String(err);
+        console.error('[MCP/chat] Error details:', msg);
+        if (err instanceof Error) {
+          console.error('[MCP/chat] Stack trace:', err.stack?.substring(0, 300));
+        }
         return { content: [{ type: 'text', text: `Agent error: ${msg}` }], isError: true };
       }
-
-      fullResponse = sanitizeAssistantReply(fullResponse);
-      if (!fullResponse) {
-        fullResponse =
-          'I do not have enough verified company data for a specific answer yet. Could you share one more detail?';
-      }
-
-      // Persist assistant reply
-      await db
-        .insert(messages)
-        .values({ conversationId, role: 'assistant', content: fullResponse });
-
-      // Background: memory extraction
-      extractAndSaveMemory({
-        businessId: business.id,
-        agentId: agent.id,
-        conversationId,
-        userMessage: message,
-        assistantResponse: fullResponse,
-      }).catch((err) => console.error('[mcp/chat] memory extraction failed:', err));
-
-      recordMessageUsage(business).catch((err: unknown) =>
-        console.error('[mcp/chat] usage recording failed:', err)
-      );
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: fullResponse,
-          },
-        ],
-        // Return threadId so the client can chain follow-up messages
-        _meta: { threadId: conversationId },
-      };
     }
   );
 
@@ -536,7 +622,7 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
         };
       }
 
-      await db
+      const [deleted] = await db
         .delete(knowledgeDocuments)
         .where(
           and(
@@ -544,10 +630,18 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
             eq(knowledgeDocuments.businessId, business.id),
             eq(knowledgeDocuments.agentId, agent.id)
           )
-        );
+        )
+        .returning({ id: knowledgeDocuments.id });
+
+      if (!deleted) {
+        return {
+          content: [{ type: 'text', text: 'Knowledge document could not be deleted.' }],
+          isError: true,
+        };
+      }
 
       return {
-        content: [{ type: 'text', text: `Knowledge document deleted: ${documentId}` }],
+        content: [{ type: 'text', text: `Knowledge document deleted: ${deleted.id}` }],
       };
     }
   );
@@ -559,6 +653,10 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
     {},
     async () => {
       const enabled = await getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id });
+      const customSkills = await getEnabledCustomWebhookSkillsForAgentScope({
+        businessId: business.id,
+        agentId: agent.id,
+      });
       return {
         content: [
           {
@@ -567,6 +665,7 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
               {
                 available: allowedSkillNames,
                 enabled,
+                customSkills,
               },
               null,
               2

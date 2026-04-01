@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import { knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
-import { chunkText, getEmbeddingModel } from '@gcfis/agent/rag';
+import { chunkText, getEmbeddingModel, normalizeEmbeddingVector } from '@gcfis/agent/rag';
+import { DocumentExtractionService } from '../lib/document-extraction';
 import { S3KnowledgeStorageService } from '../lib/s3-knowledge';
 import { resolveAgentForBusiness } from '../lib/agents';
 import { requireApiKey, requireBusinessAuth } from '../middleware/auth';
@@ -19,6 +20,7 @@ const createDocSchema = z.object({
 
 export class KnowledgeController {
   public readonly upload = multer({ storage: multer.memoryStorage() });
+  private readonly documentExtractionService = new DocumentExtractionService();
 
   public readonly list = async (req: Request, res: Response) => {
     const scope = await this.resolveBusinessScope(
@@ -77,29 +79,23 @@ export class KnowledgeController {
       const scope = await this.resolveBusinessScope(req, res, requestedBusinessId, requestedAgentId);
       if (!scope) return;
 
-      const allowed = new Set([
-        'text/plain',
-        'text/markdown',
-        'application/json',
-        'text/csv',
-        'application/xml',
-        'text/xml',
-      ]);
-      if (file.mimetype && !allowed.has(file.mimetype)) {
-        return res.status(400).json({ ok: false, error: `Unsupported file type: ${file.mimetype}` });
-      }
+      const extracted = await this.documentExtractionService.extractText({
+        buffer: file.buffer,
+        fileName: file.originalname,
+        contentType: file.mimetype,
+      });
 
-      const content = file.buffer.toString('utf8');
-      if (!content.trim()) {
-        return res.status(400).json({ ok: false, error: 'Uploaded file is empty or unsupported. Use UTF-8 text files.' });
+      if (!extracted.text.trim()) {
+        return res.status(400).json({ ok: false, error: 'Uploaded file could not be converted into searchable text.' });
       }
 
       const s3 = new S3KnowledgeStorageService();
       const uploaded = await s3.uploadDocument({
         businessId: scope.businessId,
         title,
-        content,
-        contentType: file.mimetype || 'text/plain; charset=utf-8',
+        content: file.buffer,
+        contentType: file.mimetype || extracted.contentType || 'application/octet-stream',
+        fileName: file.originalname,
       });
 
       const db = getDb();
@@ -109,7 +105,7 @@ export class KnowledgeController {
           businessId: scope.businessId,
           agentId: scope.agentId,
           title,
-          content,
+          content: extracted.text,
           sourceUrl,
           s3Bucket: uploaded.bucket,
           s3Key: uploaded.key,
@@ -122,7 +118,7 @@ export class KnowledgeController {
         return res.status(500).json({ ok: false, error: 'Failed to create document' });
       }
 
-      this.embedDocument(doc.id, scope.businessId, scope.agentId, content).catch((err) =>
+      this.embedDocument(doc.id, scope.businessId, scope.agentId, extracted.text).catch((err) =>
         console.error('[knowledge] embedding failed:', err)
       );
 
@@ -148,6 +144,7 @@ export class KnowledgeController {
       title: parsed.data.title,
       content: parsed.data.content,
       contentType: 'text/plain; charset=utf-8',
+      fileName: `${parsed.data.title}.txt`,
     });
 
     const db = getDb();
@@ -200,7 +197,7 @@ export class KnowledgeController {
       }
 
       let content = doc.content;
-      if (doc.s3Key) {
+      if (doc.s3Key && isTextLikeContentType(doc.contentType)) {
         const s3 = new S3KnowledgeStorageService();
         try {
           content = await s3.getDocumentText(doc.s3Key);
@@ -336,8 +333,25 @@ export class KnowledgeController {
         agentId,
         content: chunk.content,
         chunkIndex: chunk.index,
-        embedding: vectors[i] ?? [],
+        embedding: normalizeEmbeddingVector(vectors[i] ?? []),
       }))
     );
   }
+}
+
+function isTextLikeContentType(contentType?: string | null): boolean {
+  if (!contentType) return false;
+
+  const normalized = contentType.split(';')[0]?.trim().toLowerCase();
+  if (!normalized) return false;
+
+  return normalized.startsWith('text/') || new Set([
+    'application/json',
+    'application/xml',
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+  ]).has(normalized);
 }

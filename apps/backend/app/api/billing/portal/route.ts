@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3002';
+  const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3012';
   const returnUrl = `${adminUrl}/dashboard/settings/billing`;
 
   try {

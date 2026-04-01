@@ -4,9 +4,9 @@
   "private": true,
   "description": "PNPBrain public marketing website — pnpbrain.com",
   "scripts": {
-    "dev": "next dev --port 3000",
+    "dev": "next dev --port 3010",
     "build": "next build",
-    "start": "next start --port 3000",
+    "start": "next start --port 3010",
     "lint": "echo 'Skipping ESLint for Next.js app'",
     "type-check": "tsc --noEmit",
     "clean": "rimraf .next"

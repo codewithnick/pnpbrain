@@ -29,9 +29,11 @@ import {
   getMeetingIntegrationForAgentScope,
   getSupportIntegrationForAgentScope,
 } from '../lib/businessSkills';
+import { getEnabledCustomWebhookSkillsForAgentScope } from '../lib/customSkills';
 import { isBusinessActive, recordMessageUsage } from '../lib/billing';
 import { shouldEscalateResponse } from '../lib/escalation';
 import { createSupportTicket } from '../lib/supportTickets';
+import { createLeadHandoff } from '../lib/leadHandoffs';
 
 const ChatRequestSchema = z.object({
   message: z.string().min(1).max(4000),
@@ -234,8 +236,9 @@ export class ChatController {
     try {
       emit({ type: 'step', step: 'retrieving_context' });
 
-      const [enabledSkills, meetingIntegration, supportIntegration] = await Promise.all([
+      const [enabledSkills, customSkills, meetingIntegration, supportIntegration] = await Promise.all([
         getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
+        getEnabledCustomWebhookSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
         getMeetingIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
         getSupportIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
       ]);
@@ -269,6 +272,7 @@ export class ChatController {
         userMessage: message,
         conversationHistory: normalizedHistory.slice(-20),
         enabledSkills,
+        customSkills,
         meetingIntegration: meetingIntegration as unknown as Record<string, unknown>,
         supportIntegration: supportIntegration as unknown as Record<string, unknown>,
         createSupportTicket: async (payload: {
@@ -285,6 +289,36 @@ export class ChatController {
             customerMessage: payload.customerMessage,
             ...(payload.customerEmail ? { customerEmail: payload.customerEmail } : {}),
             ...(payload.customerName ? { customerName: payload.customerName } : {}),
+            metadata: {
+              source: 'agent_tool',
+            },
+          }),
+        createLeadHandoff: async (payload: {
+          reason: string;
+          qualificationScore?: number;
+          qualificationStage?: 'nurture' | 'mql' | 'sql';
+          customerMessage: string;
+          summary: string;
+          customerEmail?: string;
+          customerName?: string;
+          companyName?: string;
+        }) =>
+          createLeadHandoff({
+            businessId: business.id,
+            agentId: agent.id,
+            conversationId,
+            reason: payload.reason,
+            ...(payload.qualificationScore !== undefined
+              ? { qualificationScore: payload.qualificationScore }
+              : {}),
+            ...(payload.qualificationStage !== undefined
+              ? { qualificationStage: payload.qualificationStage }
+              : {}),
+            customerMessage: payload.customerMessage,
+            summary: payload.summary,
+            ...(payload.customerEmail ? { customerEmail: payload.customerEmail } : {}),
+            ...(payload.customerName ? { customerName: payload.customerName } : {}),
+            ...(payload.companyName ? { companyName: payload.companyName } : {}),
             metadata: {
               source: 'agent_tool',
             },
