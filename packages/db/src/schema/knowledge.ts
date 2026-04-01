@@ -45,6 +45,10 @@ export const knowledgeDocuments = pgTable('knowledge_documents', {
   title: text('title').notNull(),
   content: text('content').notNull(),
   sourceUrl: text('source_url'),
+  s3Bucket: text('s3_bucket'),
+  s3Key: text('s3_key'),
+  contentType: text('content_type'),
+  sizeBytes: integer('size_bytes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

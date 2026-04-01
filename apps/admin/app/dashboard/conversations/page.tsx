@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import type { ConversationSummary } from '@gcfis/types';
+import type { ConversationSummary } from '@/lib/api-types';
 import { fetchBackend } from '@/lib/supabase';
 
 export default function ConversationsPage() {

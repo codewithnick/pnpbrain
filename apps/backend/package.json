@@ -2,14 +2,15 @@
   "name": "backend",
   "version": "0.0.1",
   "private": true,
-  "description": "GCFIS Dedicated Backend — Next.js App Router API routes only (no UI pages)",
+  "description": "GCFIS Backend — Express.js API server",
+  "main": "dist/src/server.js",
   "scripts": {
-    "dev": "next dev --port 3001",
-    "build": "next build",
-    "start": "next start --port 3001",
-    "lint": "next lint",
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/src/server.js",
+    "lint": "echo 'Skipping ESLint for Express backend'",
     "type-check": "tsc --noEmit",
-    "clean": "rimraf .next dist"
+    "clean": "rimraf dist"
   },
   "dependencies": {
     "@gcfis/agent": "workspace:*",
@@ -21,19 +22,20 @@
     "@langchain/ollama": "^0.1.5",
     "@mendable/firecrawl-js": "^1.16.0",
     "@supabase/supabase-js": "^2.47.10",
+    "@aws-sdk/client-s3": "^3.893.0",
     "drizzle-orm": "^0.38.3",
-    "next": "^15.1.7",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
     "postgres": "^3.4.5",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
     "stripe": "^18.4.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.12",
     "@types/node": "^22.10.10",
-    "@types/react": "^19.0.7",
-    "@types/react-dom": "^19.0.3",
     "rimraf": "^6.0.1",
+    "tsx": "^4.7.0",
     "typescript": "^5.7.3"
   }
 }

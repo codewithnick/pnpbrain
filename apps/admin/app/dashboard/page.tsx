@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { DashboardStats } from '@gcfis/types';
+import type { DashboardStats } from '@/lib/api-types';
 import { fetchBackend } from '@/lib/supabase';
 
 const statCards = [

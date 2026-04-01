@@ -35,6 +35,10 @@ export interface KnowledgeDocument {
   title: string;
   content: string;
   sourceUrl?: string;
+  s3Bucket?: string | null;
+  s3Key?: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
   /** ISO-8601 */
   createdAt: string;
   updatedAt: string;

@@ -33,5 +33,5 @@ pnpm-debug.log*
 *.tsbuildinfo
 
 # WordPress plugin
-apps/backend/wp-plugin/dist/
-apps/backend/wp-plugin/*.zip
+apps/wp-plugin/dist/
+apps/wp-plugin/*.zip

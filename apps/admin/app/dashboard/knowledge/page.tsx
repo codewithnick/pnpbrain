@@ -2,11 +2,11 @@
 
 /**
  * Knowledge Base management page.
- * Calls the backend API to list, create, and delete knowledge documents.
+ * Calls the backend API to list, create, retrieve, and delete knowledge documents.
  */
 
 import { useEffect, useState } from 'react';
-import type { KnowledgeDocument } from '@gcfis/types';
+import type { KnowledgeDocument } from '@/lib/api-types';
 import { fetchBackend } from '@/lib/supabase';
 
 /** Fetches documents from the backend */
@@ -22,11 +22,15 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Create form state
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [creating, setCreating] = useState(false);
+
+  const [previewDoc, setPreviewDoc] = useState<KnowledgeDocument | null>(null);
+  const [previewContent, setPreviewContent] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     fetchDocuments()
@@ -35,22 +39,50 @@ export default function KnowledgePage() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleCreate(e: React.FormEvent) {
+  async function handleCreate(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setCreating(true);
     setError('');
+
     try {
-      const res = await fetchBackend('/api/knowledge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, sourceUrl: sourceUrl || undefined }),
-      });
-      if (!res.ok) throw new Error('Failed to create document');
+      let res: Response;
+
+      if (file) {
+        const formData = new FormData();
+        formData.append('title', title);
+        formData.append('file', file);
+        if (sourceUrl.trim()) formData.append('sourceUrl', sourceUrl.trim());
+
+        res = await fetchBackend('/api/knowledge', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        if (!content.trim()) {
+          throw new Error('Please paste content or choose a file.');
+        }
+
+        res = await fetchBackend('/api/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content, sourceUrl: sourceUrl || undefined }),
+        });
+      }
+
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(json.error ?? 'Failed to create document');
+      }
+
       const json = (await res.json()) as { ok: boolean; data: KnowledgeDocument };
       setDocuments((prev) => [json.data, ...prev]);
       setTitle('');
       setContent('');
       setSourceUrl('');
+      setFile(null);
+
+      const fileInput = document.getElementById('knowledge-file-input') as HTMLInputElement | null;
+      if (fileInput) fileInput.value = '';
     } catch (err) {
       setError(String(err));
     } finally {
@@ -67,17 +99,103 @@ export default function KnowledgePage() {
       setError('Failed to delete document');
       return;
     }
+
+    if (previewDoc?.id === id) {
+      setPreviewDoc(null);
+      setPreviewContent('');
+    }
+
     setDocuments((prev) => prev.filter((d) => d.id !== id));
   }
 
+  async function handlePreview(doc: KnowledgeDocument) {
+    setPreviewLoading(true);
+    setError('');
+
+    try {
+      const res = await fetchBackend(`/api/knowledge/${doc.id}`);
+      if (!res.ok) {
+        throw new Error('Failed to load document content');
+      }
+
+      const json = (await res.json()) as { ok: boolean; data: KnowledgeDocument };
+      setPreviewDoc(json.data);
+      setPreviewContent(json.data.content);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  let documentsContent: React.ReactNode;
+  if (loading) {
+    documentsContent = <p className="text-gray-400">Loading...</p>;
+  } else if (documents.length === 0) {
+    documentsContent = <p className="text-gray-400">No documents yet. Add one above.</p>;
+  } else {
+    documentsContent = (
+      <div className="space-y-3">
+        {documents.map((doc) => (
+          <div
+            key={doc.id}
+            className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{doc.title}</p>
+                {doc.sourceUrl && (
+                  <a
+                    href={doc.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-brand-500 hover:underline"
+                  >
+                    {doc.sourceUrl}
+                  </a>
+                )}
+                <p className="text-xs text-gray-400 mt-1">
+                  Added {new Date(doc.createdAt).toLocaleDateString()} {doc.sizeBytes ? `| ${doc.sizeBytes} bytes` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={() => handlePreview(doc)}
+                  disabled={previewLoading}
+                  className="text-xs text-brand-600 hover:text-brand-700 transition-colors"
+                >
+                  View content
+                </button>
+                <button
+                  onClick={() => handleDelete(doc.id)}
+                  className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            {previewDoc?.id === doc.id && (
+              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs font-medium text-gray-600 mb-2">Document Preview</p>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs text-gray-700">
+                  {previewContent}
+                </pre>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-8 max-w-5xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Knowledge Base</h1>
       <p className="text-gray-500 mb-8">
-        Manage the documents that power your AI assistant's answers.
+        Upload and manage the documents that power your AI assistant&apos;s answers.
       </p>
 
-      {/* Create form */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 mb-8 shadow-sm">
         <h2 className="text-lg font-semibold mb-4">Add new document</h2>
         <form onSubmit={handleCreate} className="space-y-4">
@@ -94,63 +212,43 @@ export default function KnowledgePage() {
             placeholder="Source URL (optional)"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-brand-500"
           />
+
+          <div className="rounded-lg border border-dashed border-gray-300 p-4">
+            <label htmlFor="knowledge-file-input" className="block text-sm font-medium text-gray-700 mb-2">
+              Upload file (preferred)
+            </label>
+            <input
+              id="knowledge-file-input"
+              type="file"
+              accept=".txt,.md,.json,.csv,.xml,text/plain,text/markdown,application/json,text/csv,application/xml,text/xml"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-gray-700"
+            />
+            <p className="mt-2 text-xs text-gray-500">
+              Supports UTF-8 text files. If you do not upload a file, pasted content below will be used.
+            </p>
+          </div>
+
           <textarea
-            required
             rows={6}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Paste document content here…"
+            placeholder="Paste document content here if you are not uploading a file..."
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-brand-500 resize-y"
           />
+
           <button
             type="submit"
             disabled={creating}
             className="rounded-lg bg-brand-500 px-5 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60 transition-colors"
           >
-            {creating ? 'Saving…' : 'Add document'}
+            {creating ? 'Saving...' : 'Add document'}
           </button>
         </form>
       </div>
 
-      {/* Document list */}
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-      {loading ? (
-        <p className="text-gray-400">Loading…</p>
-      ) : documents.length === 0 ? (
-        <p className="text-gray-400">No documents yet. Add one above.</p>
-      ) : (
-        <div className="space-y-3">
-          {documents.map((doc) => (
-            <div
-              key={doc.id}
-              className="flex items-start justify-between rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm"
-            >
-              <div>
-                <p className="text-sm font-semibold text-gray-900">{doc.title}</p>
-                {doc.sourceUrl && (
-                  <a
-                    href={doc.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-brand-500 hover:underline"
-                  >
-                    {doc.sourceUrl}
-                  </a>
-                )}
-                <p className="text-xs text-gray-400 mt-1">
-                  Added {new Date(doc.createdAt).toLocaleDateString()}
-                </p>
-              </div>
-              <button
-                onClick={() => handleDelete(doc.id)}
-                className="ml-4 text-xs text-red-400 hover:text-red-600 transition-colors shrink-0"
-              >
-                Delete
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {documentsContent}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import type { ConversationDetail } from '@gcfis/types';
+import type { ConversationDetail } from '@/lib/api-types';
 import { fetchBackend } from '@/lib/supabase';
 
 export default function ConversationDetailPage() {
