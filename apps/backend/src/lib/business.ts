@@ -6,7 +6,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { getDb } from '@gcfis/db/client';
 import {
-  businessMeetingIntegrations,
+  businessIntegrations,
   businessSkillSettings,
   businesses,
   SKILL_NAMES,
@@ -19,17 +19,28 @@ type CacheEntry = { data: Business; expiresAt: number };
 // In-process TTL cache keyed by ID and by slug (good for single-instance dev)
 const cacheById   = new Map<string, CacheEntry>();
 const cacheBySlug = new Map<string, CacheEntry>();
+const cacheByApiKey = new Map<string, CacheEntry>();
 const TTL_MS = 60_000; // 1 minute
 
 function storeCached(biz: Business): void {
   const entry: CacheEntry = { data: biz, expiresAt: Date.now() + TTL_MS };
   cacheById.set(biz.id, entry);
   cacheBySlug.set(biz.slug, entry);
+  if (biz.agentApiKey) {
+    cacheByApiKey.set(biz.agentApiKey, entry);
+  }
 }
 
 function evict(biz: Business): void {
+  const previous = cacheById.get(biz.id)?.data;
+  if (previous?.agentApiKey) {
+    cacheByApiKey.delete(previous.agentApiKey);
+  }
   cacheById.delete(biz.id);
   cacheBySlug.delete(biz.slug);
+  if (biz.agentApiKey) {
+    cacheByApiKey.delete(biz.agentApiKey);
+  }
 }
 
 /**
@@ -122,10 +133,7 @@ export async function createBusiness(data: {
     }))
   );
 
-  await db.insert(businessMeetingIntegrations).values({
-    businessId: business.id,
-    provider: 'none',
-  });
+  // New businesses have no integration rows — they are created on first connect.
 
   storeCached(business);
   return business;
@@ -207,6 +215,9 @@ export async function ensureBusinessApiKey(business: Business): Promise<Business
  */
 export async function getBusinessByApiKey(apiKey: string): Promise<Business | null> {
   if (!apiKey || !apiKey.startsWith('gcfis_live_')) return null;
+
+  const cached = cacheByApiKey.get(apiKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
 
   const db = getDb();
   const [business] = await db

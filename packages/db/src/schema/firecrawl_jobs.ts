@@ -2,7 +2,7 @@
  * Firecrawl jobs — tracks background crawl/scrape jobs per business.
  */
 import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { businesses } from './businesses.js';
+import { businesses } from './businesses';
 
 export const firecrawlJobs = pgTable('firecrawl_jobs', {
   id: uuid('id').primaryKey().defaultRandom(),

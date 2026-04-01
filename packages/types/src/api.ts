@@ -27,6 +27,23 @@ export type StreamEvent =
   | { type: 'done'; threadId: string; message: ChatMessage }
   | { type: 'error'; error: string };
 
+export interface SupportEscalationRequest {
+  threadId: string;
+  customerMessage: string;
+  customerEmail?: string;
+  customerName?: string;
+  reason?: string;
+  publicToken?: string;
+}
+
+export interface SupportEscalationResponse {
+  status: 'created' | 'failed';
+  provider: string;
+  externalTicketId?: string;
+  externalTicketUrl?: string;
+  message: string;
+}
+
 // ─── /api/knowledge/* ────────────────────────────────────────────────────────
 
 export interface KnowledgeDocument {

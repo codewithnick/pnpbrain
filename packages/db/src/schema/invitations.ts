@@ -4,7 +4,7 @@
  * clicks the acceptance link and authenticates.
  */
 import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { businesses } from './businesses.js';
+import { businesses } from './businesses';
 
 /** Roles that can be assigned via invitation (owners are not created via invite). */
 export const INVITATION_ROLES = ['admin', 'member', 'viewer'] as const;

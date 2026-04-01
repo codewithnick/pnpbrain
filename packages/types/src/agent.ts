@@ -51,16 +51,16 @@ export interface RagChunk {
 
 /** Meeting provider config saved per business and used by booking tools. */
 export interface MeetingIntegrationConfig {
-  provider: 'none' | 'google' | 'zoom' | 'calendly';
-  timezone?: string;
-  calendarId?: string;
-  googleAccessToken?: string;
-  googleRefreshToken?: string;
-  googleAccessTokenExpiresAt?: string;
-  zoomAccessToken?: string;
-  zoomRefreshToken?: string;
-  zoomAccessTokenExpiresAt?: string;
-  calendlySchedulingUrl?: string;
+  provider: string;
+  accessToken?: string;
+  refreshToken?: string;
+  tokenExpiresAt?: string;
+  config?: {
+    calendarId?: string;
+    timezone?: string;
+    schedulingUrl?: string;
+    [key: string]: unknown;
+  };
 }
 
 /** Names of available agent skills / tools. */
@@ -70,4 +70,5 @@ export type SkillName =
   | 'datetime'
   | 'lead_qualification'
   | 'meeting_scheduler'
+  | 'support_escalation'
   | 'web_search';

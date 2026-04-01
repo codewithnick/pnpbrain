@@ -8,6 +8,7 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import TravelExploreRoundedIcon from '@mui/icons-material/TravelExploreRounded';
@@ -36,6 +37,7 @@ const navItems = [
   { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: <DescriptionRoundedIcon fontSize="small" /> },
   { href: '/dashboard/firecrawl', label: 'Firecrawl', icon: <TravelExploreRoundedIcon fontSize="small" /> },
   { href: '/dashboard/skills', label: 'Skills', icon: <PsychologyRoundedIcon fontSize="small" /> },
+  { href: '/dashboard/integrations', label: 'Integrations', icon: <LinkRoundedIcon fontSize="small" /> },
   { href: '/dashboard/conversations', label: 'Conversations', icon: <ChatRoundedIcon fontSize="small" /> },
   { href: '/dashboard/team', label: 'Team', icon: <PeopleRoundedIcon fontSize="small" /> },
   { href: '/dashboard/settings', label: 'Settings', icon: <SettingsRoundedIcon fontSize="small" /> },

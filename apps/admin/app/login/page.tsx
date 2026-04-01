@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { persistAccessTokenCookie } from '@/lib/supabase';
+import { ensureBusinessProvisioned, persistAccessTokenCookie } from '@/lib/supabase';
 import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/client';
 
 export default function LoginPage() {
@@ -60,6 +60,18 @@ export default function LoginPage() {
     }
 
     persistAccessTokenCookie(data.session?.access_token ?? null);
+
+    try {
+      await ensureBusinessProvisioned();
+    } catch (provisionError) {
+      setError(
+        provisionError instanceof Error
+          ? provisionError.message
+          : 'Unable to finish account setup. Please try again.'
+      );
+      setLoading(false);
+      return;
+    }
 
     router.push('/dashboard');
   }

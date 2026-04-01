@@ -9,6 +9,15 @@ interface AuthResult {
   email: string;
 }
 
+function isUsableSupabaseKey(value?: string): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+
+  const placeholderPrefixes = ['your-', 'replace-', 'changeme', 'example'];
+  return !placeholderPrefixes.some((prefix) => normalized.startsWith(prefix));
+}
+
 export interface BusinessAuthResult {
   userId: string;
   email: string;
@@ -37,10 +46,15 @@ export async function requireSupabaseAuth(
   res: Response
 ): Promise<AuthResult | null> {
   const supabaseUrl = process.env['NEXT_PUBLIC_SUPABASE_URL'];
-  const supabaseServiceKey =
-    process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY'];
+  const serviceRoleKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
+  const publishableKey = process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY'];
+  const supabaseAuthKey = isUsableSupabaseKey(serviceRoleKey)
+    ? serviceRoleKey
+    : isUsableSupabaseKey(publishableKey)
+      ? publishableKey
+      : undefined;
 
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseUrl || !supabaseAuthKey) {
     res.status(500).json({ ok: false, error: 'Server misconfiguration: Supabase env vars missing' });
     return null;
   }
@@ -52,13 +66,19 @@ export async function requireSupabaseAuth(
   }
 
   const token = authHeader.slice(7);
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const supabase = createClient(supabaseUrl, supabaseAuthKey);
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser(token);
 
   if (error || !user) {
+    if (process.env['NODE_ENV'] !== 'production') {
+      console.warn('[auth] Supabase token validation failed', {
+        reason: error?.message ?? 'No user returned',
+        status: (error as { status?: number } | null)?.status,
+      });
+    }
     res.status(401).json({ ok: false, error: 'Unauthorized' });
     return null;
   }

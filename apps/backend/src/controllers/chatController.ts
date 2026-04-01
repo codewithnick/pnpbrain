@@ -9,7 +9,7 @@ import { runGraph } from '@gcfis/agent/graph';
 import { extractAndSaveMemory } from '@gcfis/agent/memory';
 import { getDb } from '@gcfis/db/client';
 import { conversations, messages } from '@gcfis/db/schema';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import type { Business } from '@gcfis/db';
 import type { StreamEvent } from '@gcfis/types';
 import { sendBadRequest } from '../utils/response';
@@ -23,12 +23,24 @@ import {
 import {
   getEnabledSkillsForBusiness,
   getMeetingIntegrationForBusiness,
+  getSupportIntegrationForBusiness,
 } from '../lib/businessSkills';
 import { isBusinessActive, recordMessageUsage } from '../lib/billing';
+import { shouldEscalateResponse } from '../lib/escalation';
+import { createSupportTicket } from '../lib/supportTickets';
 
 const ChatRequestSchema = z.object({
   message: z.string().min(1).max(4000),
   threadId: z.string().uuid().optional(),
+  publicToken: z.string().min(1).optional(),
+});
+
+const EscalationRequestSchema = z.object({
+  threadId: z.string().uuid(),
+  customerMessage: z.string().min(1).max(4000),
+  customerEmail: z.string().email().optional(),
+  customerName: z.string().min(1).max(120).optional(),
+  reason: z.string().min(1).max(200).optional(),
   publicToken: z.string().min(1).optional(),
 });
 
@@ -181,10 +193,30 @@ export class ChatController {
     try {
       emit({ type: 'step', step: 'retrieving_context' });
 
-      const [enabledSkills, meetingIntegration] = await Promise.all([
+      const [enabledSkills, meetingIntegration, supportIntegration] = await Promise.all([
         getEnabledSkillsForBusiness(business.id),
         getMeetingIntegrationForBusiness(business.id),
+        getSupportIntegrationForBusiness(business.id),
       ]);
+
+      const historyRows = await db
+        .select({ role: messages.role, content: messages.content })
+        .from(messages)
+        .where(eq(messages.conversationId, conversationId))
+        .orderBy(asc(messages.createdAt));
+
+      const conversationHistory = historyRows
+        .filter((row): row is { role: 'user' | 'assistant' | 'system'; content: string } =>
+          row.role === 'user' || row.role === 'assistant' || row.role === 'system'
+        )
+        .slice(-21);
+
+      const normalizedHistory =
+        conversationHistory.length > 0
+        && conversationHistory[conversationHistory.length - 1]?.role === 'user'
+        && conversationHistory[conversationHistory.length - 1]?.content === message
+          ? conversationHistory.slice(0, -1)
+          : conversationHistory;
 
       const graphInput = {
         businessId: business.id,
@@ -193,8 +225,27 @@ export class ChatController {
         businessName: business.name,
         allowedDomains,
         userMessage: message,
+        conversationHistory: normalizedHistory.slice(-20),
         enabledSkills,
         meetingIntegration: meetingIntegration as unknown as Record<string, unknown>,
+        supportIntegration: supportIntegration as unknown as Record<string, unknown>,
+        createSupportTicket: async (payload: {
+          reason: string;
+          customerMessage: string;
+          customerEmail?: string;
+          customerName?: string;
+        }) =>
+          createSupportTicket({
+            businessId: business.id,
+            conversationId,
+            reason: payload.reason,
+            customerMessage: payload.customerMessage,
+            ...(payload.customerEmail ? { customerEmail: payload.customerEmail } : {}),
+            ...(payload.customerName ? { customerName: payload.customerName } : {}),
+            metadata: {
+              source: 'agent_tool',
+            },
+          }),
         ...(business.llmProvider !== null ? { llmProvider: business.llmProvider } : {}),
         ...(business.llmModel !== null ? { llmModel: business.llmModel } : {}),
         ...(business.llmApiKey !== null ? { llmApiKey: business.llmApiKey } : {}),
@@ -226,6 +277,22 @@ export class ChatController {
         .values({ conversationId, role: 'assistant', content: fullAssistantResponse })
         .returning();
 
+      const shouldAutoEscalate =
+        enabledSkills.includes('support_escalation') && shouldEscalateResponse(fullAssistantResponse);
+
+      if (shouldAutoEscalate) {
+        createSupportTicket({
+          businessId: business.id,
+          conversationId,
+          reason: 'agent_unable_to_answer',
+          customerMessage: message,
+          assistantMessage: fullAssistantResponse,
+          metadata: {
+            source: 'auto_escalation',
+          },
+        }).catch((err) => console.error('[support] auto escalation failed:', err));
+      }
+
       // Background: extract + save memory (non-blocking)
       extractAndSaveMemory({
         businessId: business.id,
@@ -256,5 +323,72 @@ export class ChatController {
     } finally {
       res.end();
     }
+  };
+
+  public readonly handleManualEscalation = async (req: Request, res: Response) => {
+    const parsed = EscalationRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendBadRequest(res, parsed.error.issues.map((i) => i.message).join(', '));
+    }
+
+    const {
+      threadId,
+      customerMessage,
+      customerEmail,
+      customerName,
+      reason,
+      publicToken,
+    } = parsed.data;
+
+    const db = getDb();
+    const existingConversation = await db
+      .select({ id: conversations.id, businessId: conversations.businessId })
+      .from(conversations)
+      .where(eq(conversations.id, threadId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+
+    if (!existingConversation) {
+      return sendBadRequest(res, 'Thread not found');
+    }
+
+    const business = await resolveScopedBusiness(
+      existingConversation.businessId,
+      req.header('x-api-key'),
+      publicToken
+    );
+
+    if (!business) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized escalation request' });
+    }
+
+    const enabledSkills = await getEnabledSkillsForBusiness(business.id);
+    if (!enabledSkills.includes('support_escalation')) {
+      return res.status(403).json({ ok: false, error: 'Support escalation skill is disabled' });
+    }
+
+    const ticket = await createSupportTicket({
+      businessId: business.id,
+      conversationId: existingConversation.id,
+      reason: reason ?? 'manual_customer_escalation',
+      customerMessage,
+      ...(customerEmail ? { customerEmail } : {}),
+      ...(customerName ? { customerName } : {}),
+      metadata: {
+        source: 'manual_escalation_endpoint',
+      },
+    });
+
+    return res.status(ticket.status === 'created' ? 201 : 502).json({
+      ok: ticket.status === 'created',
+      data: {
+        status: ticket.status,
+        provider: ticket.provider,
+        externalTicketId: ticket.externalTicketId,
+        externalTicketUrl: ticket.externalTicketUrl,
+        message: ticket.message,
+      },
+      ...(ticket.status === 'failed' ? { error: ticket.message } : {}),
+    });
   };
 }

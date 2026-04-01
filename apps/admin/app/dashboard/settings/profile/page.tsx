@@ -181,7 +181,7 @@ export default function ProfileSettingsPage() {
             value={slug}
             onChange={(e) => setSlug(slugify(e.target.value))}
             required
-            pattern="[a-z0-9-]+"
+            pattern="[a-z0-9\-]+"
             className="flex-1 px-3 py-2.5 text-sm bg-white focus:outline-none font-mono dark:bg-slate-950 dark:text-slate-100"
             placeholder="acme-corp"
           />

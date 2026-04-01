@@ -11,7 +11,6 @@
 
 import {
   END,
-  MemorySaver,
   START,
   StateGraph,
   MessagesAnnotation,
@@ -20,6 +19,7 @@ import { ToolNode } from '@langchain/langgraph/prebuilt';
 import {
   SystemMessage,
   HumanMessage,
+  AIMessage,
   BaseMessage,
 } from '@langchain/core/messages';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
@@ -35,19 +35,20 @@ import {
   leadQualificationTool,
   meetingSchedulerTool,
   createMeetingBookingTool,
+  createSupportTicketTool,
 } from '@gcfis/tools';
 
 interface MeetingIntegrationConfig {
-  provider: 'none' | 'google' | 'zoom' | 'calendly';
-  timezone?: string;
-  calendarId?: string;
-  googleAccessToken?: string;
-  googleRefreshToken?: string;
-  googleAccessTokenExpiresAt?: string;
-  zoomAccessToken?: string;
-  zoomRefreshToken?: string;
-  zoomAccessTokenExpiresAt?: string;
-  calendlySchedulingUrl?: string;
+  provider: string;
+  accessToken?: string;
+  refreshToken?: string;
+  tokenExpiresAt?: string;
+  config?: {
+    calendarId?: string;
+    timezone?: string;
+    schedulingUrl?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface GraphInput {
@@ -57,8 +58,22 @@ export interface GraphInput {
   businessName: string;
   allowedDomains: string[];
   userMessage: string;
+  conversationHistory?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   enabledSkills?: string[];
   meetingIntegration?: Record<string, unknown>;
+  supportIntegration?: Record<string, unknown>;
+  createSupportTicket?: (payload: {
+    reason: string;
+    customerMessage: string;
+    customerEmail?: string;
+    customerName?: string;
+  }) => Promise<{
+    status: 'created' | 'failed';
+    provider: string;
+    externalTicketId?: string;
+    externalTicketUrl?: string;
+    message: string;
+  }>;
   llmProvider?: string;
   llmModel?: string;
   llmApiKey?: string;
@@ -115,8 +130,7 @@ export class AgentGraphService {
       .addConditionalEdges('decide', shouldUseTool)
       .addEdge('tools', 'decide');
 
-    const checkpointer = new MemorySaver();
-    return graph.compile({ checkpointer });
+    return graph.compile();
   }
 
   public async *runGraph(input: GraphInput) {
@@ -127,8 +141,11 @@ export class AgentGraphService {
       businessName,
       allowedDomains,
       userMessage,
+      conversationHistory,
       enabledSkills,
       meetingIntegration,
+      supportIntegration,
+      createSupportTicket,
       llmProvider,
       llmModel,
       llmApiKey,
@@ -152,36 +169,26 @@ export class AgentGraphService {
     const normalizedMeetingIntegration: MeetingIntegrationConfig = {
       provider:
         typeof meetingIntegration?.['provider'] === 'string'
-          ? (meetingIntegration['provider'] as MeetingIntegrationConfig['provider'])
+          ? meetingIntegration['provider']
           : 'none',
-      ...(typeof meetingIntegration?.['timezone'] === 'string'
-        ? { timezone: meetingIntegration['timezone'] }
+      ...(typeof meetingIntegration?.['accessToken'] === 'string'
+        ? { accessToken: meetingIntegration['accessToken'] }
         : {}),
-      ...(typeof meetingIntegration?.['calendarId'] === 'string'
-        ? { calendarId: meetingIntegration['calendarId'] }
+      ...(typeof meetingIntegration?.['refreshToken'] === 'string'
+        ? { refreshToken: meetingIntegration['refreshToken'] }
         : {}),
-      ...(typeof meetingIntegration?.['googleAccessToken'] === 'string'
-        ? { googleAccessToken: meetingIntegration['googleAccessToken'] }
+      ...(typeof meetingIntegration?.['tokenExpiresAt'] === 'string'
+        ? { tokenExpiresAt: meetingIntegration['tokenExpiresAt'] }
         : {}),
-      ...(typeof meetingIntegration?.['googleRefreshToken'] === 'string'
-        ? { googleRefreshToken: meetingIntegration['googleRefreshToken'] }
-        : {}),
-      ...(typeof meetingIntegration?.['googleAccessTokenExpiresAt'] === 'string'
-        ? { googleAccessTokenExpiresAt: meetingIntegration['googleAccessTokenExpiresAt'] }
-        : {}),
-      ...(typeof meetingIntegration?.['zoomAccessToken'] === 'string'
-        ? { zoomAccessToken: meetingIntegration['zoomAccessToken'] }
-        : {}),
-      ...(typeof meetingIntegration?.['zoomRefreshToken'] === 'string'
-        ? { zoomRefreshToken: meetingIntegration['zoomRefreshToken'] }
-        : {}),
-      ...(typeof meetingIntegration?.['zoomAccessTokenExpiresAt'] === 'string'
-        ? { zoomAccessTokenExpiresAt: meetingIntegration['zoomAccessTokenExpiresAt'] }
-        : {}),
-      ...(typeof meetingIntegration?.['calendlySchedulingUrl'] === 'string'
-        ? { calendlySchedulingUrl: meetingIntegration['calendlySchedulingUrl'] }
+      ...(meetingIntegration?.['config'] && typeof meetingIntegration['config'] === 'object'
+        ? { config: meetingIntegration['config'] as NonNullable<MeetingIntegrationConfig['config']> }
         : {}),
     };
+
+    const supportProvider =
+      typeof supportIntegration?.['provider'] === 'string'
+        ? supportIntegration['provider']
+        : 'none';
     const allTools: DynamicStructuredTool[] = [];
     if (skills.includes('calculator')) allTools.push(calculatorTool);
     if (skills.includes('datetime')) allTools.push(datetimeTool);
@@ -193,6 +200,13 @@ export class AgentGraphService {
         createMeetingBookingTool({
           businessName,
           integration: normalizedMeetingIntegration,
+        })
+      );
+    }
+    if (skills.includes('support_escalation') && supportProvider !== 'none' && createSupportTicket) {
+      allTools.push(
+        createSupportTicketTool({
+          createTicket: createSupportTicket,
         })
       );
     }
@@ -227,15 +241,25 @@ export class AgentGraphService {
       .addEdge(START, 'decide')
       .addConditionalEdges('decide', shouldUseTool)
       .addEdge('tools', 'decide')
-      .compile({ checkpointer: new MemorySaver() });
+      .compile();
 
-    const threadConfig = { configurable: { thread_id: conversationId } };
-    const messages: BaseMessage[] = [
+    const historyMessages: BaseMessage[] = (conversationHistory ?? []).map((message) => {
+      if (message.role === 'system') {
+        return new SystemMessage(message.content);
+      }
+      if (message.role === 'assistant') {
+        return new AIMessage(message.content);
+      }
+      return new HumanMessage(message.content);
+    });
+
+    const promptMessages: BaseMessage[] = [
       new SystemMessage(systemPrompt),
+      ...historyMessages,
       new HumanMessage(userMessage),
     ];
 
-    const stream = graph.streamEvents({ messages }, { ...threadConfig, version: 'v2' });
+    const stream = graph.streamEvents({ messages: promptMessages }, { version: 'v2' });
     for await (const event of stream) {
       yield event;
     }

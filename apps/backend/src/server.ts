@@ -1,5 +1,6 @@
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { loadBackendEnv } from './lib/loadEnv';
 import { corsMwfn } from './middleware/cors';
 import { errorHandler } from './middleware/errorHandler';
 import agentRoutes from './routes/agent';
@@ -14,8 +15,11 @@ import memoryRoutes from './routes/memory';
 import publicRoutes from './routes/public';
 import skillsRoutes from './routes/skills';
 import teamRoutes from './routes/team';
+import { mcpRateLimiter } from './middleware/rateLimit';
 import { createMcpServer } from './mcp/server';
 import { getBusinessByApiKey } from './lib/business';
+
+loadBackendEnv();
 
 const app: express.Express = express();
 const PORT = process.env['PORT'] ?? 3001;
@@ -73,7 +77,7 @@ app.use('/api/team', teamRoutes);
 // Stateless Streamable HTTP transport — one server instance per request.
 // Authenticate with: x-api-key: <your business agentApiKey>
 
-app.post('/mcp', express.json(), async (req: express.Request, res: express.Response) => {
+app.post('/mcp', mcpRateLimiter, express.json(), async (req: express.Request, res: express.Response) => {
   const apiKey = req.header('x-api-key');
   if (!apiKey) {
     res.status(401).json({ error: 'Missing x-api-key header. Provide your business API key.' });

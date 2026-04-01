@@ -14,7 +14,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { businesses } from './businesses.js';
+import { businesses } from './businesses';
 
 /**
  * pgvector custom column type.

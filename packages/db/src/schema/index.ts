@@ -1,12 +1,13 @@
 /**
  * Drizzle schema barrel — exports all tables and relations.
  */
-export * from './businesses.js';
-export * from './business_skill_settings.js';
-export * from './business_meeting_integrations.js';
-export * from './business_members.js';
-export * from './invitations.js';
-export * from './knowledge.js';
-export * from './conversations.js';
-export * from './memory.js';
-export * from './firecrawl_jobs.js';
+export * from './businesses';
+export * from './business_skill_settings';
+export * from './business_integrations';
+export * from './business_members';
+export * from './invitations';
+export * from './knowledge';
+export * from './conversations';
+export * from './memory';
+export * from './firecrawl_jobs';
+export * from './support_tickets';

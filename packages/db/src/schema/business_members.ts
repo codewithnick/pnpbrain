@@ -4,7 +4,7 @@
  * a business is created via the auth controller.
  */
 import { pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { businesses } from './businesses.js';
+import { businesses } from './businesses';
 
 export const BUSINESS_MEMBER_ROLES = ['owner', 'admin', 'member', 'viewer'] as const;
 export type BusinessMemberRole = (typeof BUSINESS_MEMBER_ROLES)[number];

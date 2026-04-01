@@ -15,6 +15,43 @@ import { eq, sql } from 'drizzle-orm';
 import type { RagChunk } from '@gcfis/types';
 
 type DbClient = ReturnType<typeof getDb>;
+type EmbeddingCacheEntry = { vector: number[]; expiresAt: number };
+
+const EMBEDDING_CACHE_TTL_MS = 5 * 60_000;
+const EMBEDDING_CACHE_MAX_ENTRIES = 1000;
+const embeddingCache = new Map<string, EmbeddingCacheEntry>();
+
+function buildEmbeddingCacheKey(query: string): string {
+  const provider = process.env['EMBEDDING_PROVIDER'] ?? 'ollama';
+  return `${provider}:${query.trim().toLowerCase()}`;
+}
+
+function getCachedEmbedding(cacheKey: string): number[] | null {
+  const existing = embeddingCache.get(cacheKey);
+  if (!existing) return null;
+  if (existing.expiresAt <= Date.now()) {
+    embeddingCache.delete(cacheKey);
+    return null;
+  }
+
+  // Touch entry to keep most recently used keys around longer.
+  embeddingCache.delete(cacheKey);
+  embeddingCache.set(cacheKey, existing);
+  return existing.vector;
+}
+
+function setCachedEmbedding(cacheKey: string, vector: number[]): void {
+  if (embeddingCache.size >= EMBEDDING_CACHE_MAX_ENTRIES) {
+    const firstKey = embeddingCache.keys().next().value;
+    if (firstKey) {
+      embeddingCache.delete(firstKey);
+    }
+  }
+  embeddingCache.set(cacheKey, {
+    vector,
+    expiresAt: Date.now() + EMBEDDING_CACHE_TTL_MS,
+  });
+}
 
 // ─── Embedding factory ────────────────────────────────────────────────────────
 
@@ -67,7 +104,17 @@ export class RagService {
     topK = 5
   ): Promise<RagChunk[]> {
     const embeddings = this.embeddingFactory();
-    const [queryVector] = await embeddings.embedDocuments([query]);
+    const cacheKey = buildEmbeddingCacheKey(query);
+    const cached = getCachedEmbedding(cacheKey);
+    let queryVector = cached ?? null;
+
+    if (!queryVector) {
+      const [embeddedVector] = await embeddings.embedDocuments([query]);
+      queryVector = embeddedVector ?? null;
+      if (queryVector && queryVector.length > 0) {
+        setCachedEmbedding(cacheKey, queryVector);
+      }
+    }
 
     if (!queryVector || queryVector.length === 0) {
       return [];

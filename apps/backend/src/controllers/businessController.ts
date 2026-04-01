@@ -16,17 +16,26 @@ import {
   updateBusiness,
 } from '../lib/business';
 import {
-  getEnabledSkillsForBusiness,
+  disconnectIntegration,
+  getAllIntegrationsForBusiness,
   getMeetingIntegrationForBusiness,
+  getSupportIntegrationForBusiness,
+  getEnabledSkillsForBusiness,
   setEnabledSkillsForBusiness,
-  updateMeetingIntegrationForBusiness,
+  upsertIntegration,
 } from '../lib/businessSkills';
 
 const LLM_PROVIDERS = ['ollama', 'openai', 'anthropic'] as const;
-const SKILL_NAMES = ['calculator', 'datetime', 'firecrawl', 'lead_qualification', 'meeting_scheduler'] as const;
+const SKILL_NAMES = [
+  'calculator',
+  'datetime',
+  'firecrawl',
+  'lead_qualification',
+  'meeting_scheduler',
+  'support_escalation',
+] as const;
 const POSITIONS = ['bottom-right', 'bottom-left'] as const;
 const THEMES = ['light', 'dark'] as const;
-const MEETING_PROVIDERS = ['none', 'google', 'zoom', 'calendly'] as const;
 const OAUTH_PROVIDERS = ['google', 'zoom'] as const;
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -49,14 +58,6 @@ const updateSchema = z.object({
   llmApiKey: z.string().max(200).optional().nullable(),
   llmBaseUrl: z.string().url().optional().nullable(),
   enabledSkills: z.array(z.enum(SKILL_NAMES)).optional(),
-  meetingIntegration: z
-    .object({
-      provider: z.enum(MEETING_PROVIDERS),
-      timezone: z.string().max(60).optional(),
-      calendarId: z.string().max(160).optional(),
-      calendlySchedulingUrl: z.string().url().max(400).optional(),
-    })
-    .optional(),
   allowedDomains: z.array(z.string().min(1)).max(50).optional(),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{3,6}$/).optional(),
   botName: z.string().min(1).max(60).optional(),
@@ -71,9 +72,11 @@ const connectSchema = z.object({
 });
 
 async function toSafeBusinessResponse(business: Business) {
-  const [enabledSkills, meetingIntegration] = await Promise.all([
+  const [enabledSkills, integrations, meetingIntegration, supportIntegration] = await Promise.all([
     getEnabledSkillsForBusiness(business.id),
+    getAllIntegrationsForBusiness(business.id),
     getMeetingIntegrationForBusiness(business.id),
+    getSupportIntegrationForBusiness(business.id),
   ]);
 
   return {
@@ -84,18 +87,9 @@ async function toSafeBusinessResponse(business: Business) {
     ownerUserId: business.ownerUserId,
     allowedDomains: parseAllowedDomains(business.allowedDomains),
     enabledSkills,
-    meetingIntegration: {
-      provider: meetingIntegration.provider,
-      ...(meetingIntegration.timezone ? { timezone: meetingIntegration.timezone } : {}),
-      ...(meetingIntegration.calendarId ? { calendarId: meetingIntegration.calendarId } : {}),
-      ...(meetingIntegration.calendlySchedulingUrl
-        ? { calendlySchedulingUrl: meetingIntegration.calendlySchedulingUrl }
-        : {}),
-      hasGoogleAccessToken: !!meetingIntegration.googleAccessToken,
-      hasZoomAccessToken: !!meetingIntegration.zoomAccessToken,
-      hasGoogleRefreshToken: !!meetingIntegration.googleRefreshToken,
-      hasZoomRefreshToken: !!meetingIntegration.zoomRefreshToken,
-    },
+    integrations,
+    meetingIntegration,
+    supportIntegration,
     llmProvider: business.llmProvider,
     llmModel: business.llmModel,
     llmBaseUrl: business.llmBaseUrl,
@@ -168,21 +162,6 @@ export class BusinessController {
       await setEnabledSkillsForBusiness(business.id, parsed.data.enabledSkills);
     }
 
-    if (parsed.data.meetingIntegration) {
-      await updateMeetingIntegrationForBusiness(business.id, {
-        provider: parsed.data.meetingIntegration.provider,
-        ...(parsed.data.meetingIntegration.timezone !== undefined
-          ? { timezone: parsed.data.meetingIntegration.timezone }
-          : {}),
-        ...(parsed.data.meetingIntegration.calendarId !== undefined
-          ? { calendarId: parsed.data.meetingIntegration.calendarId }
-          : {}),
-        ...(parsed.data.meetingIntegration.calendlySchedulingUrl !== undefined
-          ? { calendlySchedulingUrl: parsed.data.meetingIntegration.calendlySchedulingUrl }
-          : {}),
-      });
-    }
-
     const withApiKey = await ensureBusinessApiKey(updated);
     return res.json({ ok: true, data: await toSafeBusinessResponse(withApiKey) });
   };
@@ -205,6 +184,44 @@ export class BusinessController {
         businessId: updated.id,
       },
     });
+  };
+
+  public readonly updateIntegrationConfig = async (req: Request, res: Response) => {
+    const auth = await requireBusinessAuth(req, res, 'admin');
+    if (!auth) return;
+
+    const provider = req.params['provider'];
+    if (!provider || typeof provider !== 'string' || provider.length > 40) {
+      return res.status(400).json({ ok: false, error: 'Invalid provider' });
+    }
+
+    const schema = z.object({
+      isDefault: z.boolean().optional(),
+      accessToken: z.string().max(500).optional().nullable(),
+      config: z
+        .record(z.string().max(500))
+        .optional(),
+    });
+
+    const parsed = schema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.issues.map((i) => i.message).join(', ') });
+    }
+
+    const business = await getBusinessById(auth.businessId);
+    if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
+
+    await upsertIntegration(business.id, provider, {
+      ...(parsed.data.isDefault !== undefined ? { isDefault: parsed.data.isDefault } : {}),
+      ...(parsed.data.accessToken !== undefined
+        ? { accessToken: parsed.data.accessToken }
+        : {}),
+      ...(parsed.data.config !== undefined
+        ? { configJson: JSON.stringify(parsed.data.config) }
+        : {}),
+    });
+
+    return res.json({ ok: true });
   };
 
   public readonly getGoogleConnectUrl = async (req: Request, res: Response) => {
@@ -331,12 +348,11 @@ export class BusinessController {
       return res.redirect(withOAuthStatus(state.returnTo, 'google_business_missing'));
     }
 
-    await updateMeetingIntegrationForBusiness(business.id, {
-      provider: 'google',
-      googleAccessToken: payload.access_token,
-      ...(payload.refresh_token ? { googleRefreshToken: payload.refresh_token } : {}),
+    await upsertIntegration(business.id, 'google', {
+      accessToken: payload.access_token,
+      ...(payload.refresh_token ? { refreshToken: payload.refresh_token } : {}),
       ...(typeof payload.expires_in === 'number'
-        ? { googleAccessTokenExpiresAt: new Date(Date.now() + payload.expires_in * 1000).toISOString() }
+        ? { tokenExpiresAt: new Date(Date.now() + payload.expires_in * 1000) }
         : {}),
     });
 
@@ -398,12 +414,11 @@ export class BusinessController {
       return res.redirect(withOAuthStatus(state.returnTo, 'zoom_business_missing'));
     }
 
-    await updateMeetingIntegrationForBusiness(business.id, {
-      provider: 'zoom',
-      zoomAccessToken: payload.access_token,
-      ...(payload.refresh_token ? { zoomRefreshToken: payload.refresh_token } : {}),
+    await upsertIntegration(business.id, 'zoom', {
+      accessToken: payload.access_token,
+      ...(payload.refresh_token ? { refreshToken: payload.refresh_token } : {}),
       ...(typeof payload.expires_in === 'number'
-        ? { zoomAccessTokenExpiresAt: new Date(Date.now() + payload.expires_in * 1000).toISOString() }
+        ? { tokenExpiresAt: new Date(Date.now() + payload.expires_in * 1000) }
         : {}),
     });
 
@@ -415,8 +430,8 @@ export class BusinessController {
     if (!auth) return;
 
     const provider = req.params['provider'];
-    if (!provider || !OAUTH_PROVIDERS.includes(provider as OAuthProvider)) {
-      return res.status(400).json({ ok: false, error: 'Unsupported provider' });
+    if (!provider || provider.length > 40) {
+      return res.status(400).json({ ok: false, error: 'Invalid provider' });
     }
 
     const business = await getBusinessById(auth.businessId);
@@ -424,21 +439,7 @@ export class BusinessController {
       return res.status(404).json({ ok: false, error: 'Business not found' });
     }
 
-    if (provider === 'google') {
-      await updateMeetingIntegrationForBusiness(business.id, {
-        provider: 'none',
-        googleAccessToken: '',
-        googleRefreshToken: '',
-      });
-    }
-
-    if (provider === 'zoom') {
-      await updateMeetingIntegrationForBusiness(business.id, {
-        provider: 'none',
-        zoomAccessToken: '',
-        zoomRefreshToken: '',
-      });
-    }
+    await disconnectIntegration(business.id, provider);
 
     const refreshed = await getBusinessById(business.id);
     if (!refreshed) {

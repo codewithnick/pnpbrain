@@ -1,12 +1,10 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import FirecrawlApp from '@mendable/firecrawl-js';
-import { eq } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
-import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
-import { chunkText, getEmbeddingModel } from '@gcfis/agent/rag';
+import { firecrawlJobs } from '@gcfis/db/schema';
 import { getBusinessById, parseAllowedDomains } from '../lib/business';
 import { requireApiKey, requireBusinessAuth } from '../middleware/auth';
+import { enqueueCrawlJob } from '../jobs/crawlQueue';
 
 const requestSchema = z.object({
   businessId: z.string().uuid().optional(),
@@ -44,9 +42,13 @@ export class SkillsController {
       .values({ businessId: business.id, urls: JSON.stringify(safeUrls), status: 'queued' })
       .returning();
 
-    this.runFirecrawlJob(job!.id, business.id, safeUrls).catch((err) =>
-      console.error('[firecrawl] job failed:', err)
-    );
+    const queued = await enqueueCrawlJob(job!.id);
+    if (!queued) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Queue is unavailable. Ensure REDIS_URL is configured and crawl worker is running.',
+      });
+    }
 
     return res.status(202).json({ ok: true, data: { jobId: job!.id, status: 'queued' } });
   };
@@ -77,51 +79,5 @@ export class SkillsController {
     }
 
     return business;
-  }
-
-  private async runFirecrawlJob(jobId: string, businessId: string, urls: string[]): Promise<void> {
-    const db = getDb();
-    await db.update(firecrawlJobs).set({ status: 'running', updatedAt: new Date() }).where(eq(firecrawlJobs.id, jobId));
-
-    try {
-      const apiKey = process.env['FIRECRAWL_API_KEY'];
-      if (!apiKey) throw new Error('FIRECRAWL_API_KEY not set');
-
-      const firecrawl = new FirecrawlApp({ apiKey });
-      const embeddings = getEmbeddingModel();
-
-      for (const url of urls) {
-        const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'] });
-        if (!result.success || !result.markdown) continue;
-
-        const title = result.metadata?.title ?? url;
-        const [doc] = await db
-          .insert(knowledgeDocuments)
-          .values({ businessId, title, content: result.markdown, sourceUrl: url })
-          .returning();
-
-        const chunks = chunkText(result.markdown);
-        const vectors = await embeddings.embedDocuments(chunks.map((c) => c.content));
-
-        await db.insert(knowledgeChunks).values(
-          chunks.map((chunk, i) => ({
-            documentId: doc!.id,
-            businessId,
-            content: chunk.content,
-            chunkIndex: chunk.index,
-            embedding: vectors[i] ?? [],
-          }))
-        );
-      }
-
-      await db.update(firecrawlJobs).set({ status: 'done', updatedAt: new Date() }).where(eq(firecrawlJobs.id, jobId));
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      await db
-        .update(firecrawlJobs)
-        .set({ status: 'error', errorMessage, updatedAt: new Date() })
-        .where(eq(firecrawlJobs.id, jobId));
-      throw err;
-    }
   }
 }

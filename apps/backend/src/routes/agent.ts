@@ -1,5 +1,6 @@
 import { Router, type Router as ExpressRouter } from 'express';
 import { ChatController } from '../controllers/chatController';
+import { chatRateLimiter } from '../middleware/rateLimit';
 
 const router: ExpressRouter = Router();
 const chatController = new ChatController();
@@ -15,6 +16,7 @@ const chatController = new ChatController();
  * Response:
  *   text/event-stream  →  series of StreamEvent JSON objects
  */
-router.post('/chat', chatController.handleChatStream);
+router.post('/chat', chatRateLimiter, chatController.handleChatStream);
+router.post('/escalate', chatRateLimiter, chatController.handleManualEscalation);
 
 export default router;

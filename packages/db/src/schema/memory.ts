@@ -2,8 +2,8 @@
  * Long-term AI memory — per-session facts extracted by the agent.
  */
 import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { conversations } from './conversations.js';
-import { businesses } from './businesses.js';
+import { conversations } from './conversations';
+import { businesses } from './businesses';
 
 export const memoryFacts = pgTable('memory_facts', {
   id: uuid('id').primaryKey().defaultRandom(),

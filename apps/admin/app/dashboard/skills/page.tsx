@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { fetchBackend } from '@/lib/supabase';
 
@@ -39,6 +40,13 @@ const SKILLS = [
     description:
       "Crawls pages from your allowed domains in real-time to inject fresh content into the agent's context. Useful for live FAQs, pricing pages, and documentation.",
   },
+  {
+    key: 'support_escalation',
+    icon: '🎫',
+    title: 'Support Escalation',
+    description:
+      'Lets the assistant raise a support ticket to your human team when it cannot confidently answer.',
+  },
 ];
 
 export default function SkillsPage() {
@@ -56,6 +64,14 @@ export default function SkillsPage() {
   const [hasGoogleAccessToken, setHasGoogleAccessToken] = useState(false);
   const [hasZoomAccessToken, setHasZoomAccessToken] = useState(false);
   const [connectingProvider, setConnectingProvider] = useState<'google' | 'zoom' | null>(null);
+  const [zendeskSubdomain, setZendeskSubdomain] = useState('');
+  const [zendeskSupportEmail, setZendeskSupportEmail] = useState('');
+  const [zendeskApiToken, setZendeskApiToken] = useState('');
+  const [hasZendeskToken, setHasZendeskToken] = useState(false);
+  const [freshdeskDomain, setFreshdeskDomain] = useState('');
+  const [freshdeskApiKey, setFreshdeskApiKey] = useState('');
+  const [hasFreshdeskToken, setHasFreshdeskToken] = useState(false);
+  const [supportProvider, setSupportProvider] = useState<'none' | 'zendesk' | 'freshdesk'>('none');
 
   useEffect(() => {
     (async () => {
@@ -81,6 +97,28 @@ export default function SkillsPage() {
 
       if (Array.isArray(data.enabledSkills)) setEnabledSkills(data.enabledSkills as string[]);
       if (Array.isArray(data.allowedDomains)) setAllowedDomains((data.allowedDomains as string[]).join('\n'));
+      if (Array.isArray(data.integrations)) {
+        const integrations = data.integrations as Array<Record<string, unknown>>;
+        const zendesk = integrations.find((integration) => integration.provider === 'zendesk');
+        if (zendesk) {
+          setHasZendeskToken(Boolean(zendesk.connected));
+          if (zendesk.config && typeof zendesk.config === 'object') {
+            const config = zendesk.config as Record<string, unknown>;
+            if (typeof config.subdomain === 'string') setZendeskSubdomain(config.subdomain);
+            if (typeof config.supportEmail === 'string') setZendeskSupportEmail(config.supportEmail);
+          }
+        }
+        const freshdesk = integrations.find((integration) => integration.provider === 'freshdesk');
+        if (freshdesk) {
+          setHasFreshdeskToken(Boolean(freshdesk.connected));
+          if (freshdesk.config && typeof freshdesk.config === 'object') {
+            const config = freshdesk.config as Record<string, unknown>;
+            if (typeof config.domain === 'string') setFreshdeskDomain(config.domain);
+          }
+        }
+        if (zendesk?.connected) setSupportProvider('zendesk');
+        else if (freshdesk?.connected) setSupportProvider('freshdesk');
+      }
       if (data.meetingIntegration && typeof data.meetingIntegration === 'object') {
         const meeting = data.meetingIntegration as Record<string, unknown>;
         if (meeting.provider === 'google' || meeting.provider === 'zoom' || meeting.provider === 'calendly' || meeting.provider === 'none') {
@@ -199,14 +237,54 @@ export default function SkillsPage() {
       }),
     });
 
-    setSaving(false);
-
     if (!res.ok) {
+      setSaving(false);
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       setError(json.error ?? 'Save failed');
       return;
     }
 
+    if (enabledSkills.includes('support_escalation') && supportProvider !== 'none') {
+      const isFreshdesk = supportProvider === 'freshdesk';
+      const integrationRes = await fetchBackend(
+        `/api/business/me/integrations/${supportProvider}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            isFreshdesk
+              ? {
+                  ...(freshdeskApiKey.trim().length > 0 ? { accessToken: freshdeskApiKey.trim() } : {}),
+                  config: { domain: freshdeskDomain.trim() },
+                }
+              : {
+                  ...(zendeskApiToken.trim().length > 0 ? { accessToken: zendeskApiToken.trim() } : {}),
+                  config: {
+                    subdomain: zendeskSubdomain.trim(),
+                    supportEmail: zendeskSupportEmail.trim(),
+                  },
+                }
+          ),
+        }
+      );
+
+      if (!integrationRes.ok) {
+        setSaving(false);
+        const json = (await integrationRes.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? `Failed to save ${isFreshdesk ? 'Freshdesk' : 'Zendesk'} integration`);
+        return;
+      }
+
+      if (isFreshdesk) {
+        setHasFreshdeskToken(hasFreshdeskToken || freshdeskApiKey.trim().length > 0);
+        setFreshdeskApiKey('');
+      } else {
+        setHasZendeskToken(hasZendeskToken || zendeskApiToken.trim().length > 0);
+        setZendeskApiToken('');
+      }
+    }
+
+    setSaving(false);
     setSuccess(true);
     setTimeout(() => setSuccess(false), 3000);
   }
@@ -218,8 +296,15 @@ export default function SkillsPage() {
   return (
     <div className="p-8 max-w-4xl">
       <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-2">Skills</h1>
-      <p className="text-sm text-gray-500 dark:text-slate-400 mb-8">
+      <p className="text-sm text-gray-500 dark:text-slate-400 mb-3">
         Configure which tools your assistant can use. This page is designed to scale as more skills are added.
+      </p>
+      <p className="text-sm text-gray-500 dark:text-slate-400 mb-8">
+        Need to connect Google, Zoom, or Calendly? Use the dedicated{' '}
+        <Link href="/dashboard/integrations" className="text-brand-400 hover:text-brand-300 underline">
+          Integrations page
+        </Link>
+        .
       </p>
 
       <form onSubmit={handleSave} className="space-y-6 max-w-3xl">
@@ -271,8 +356,7 @@ export default function SkillsPage() {
           </div>
         </div>
 
-        {enabledSkills.includes('meeting_scheduler') && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Meeting integration</h3>
               <p className="text-xs text-gray-500 dark:text-slate-400">
@@ -280,11 +364,18 @@ export default function SkillsPage() {
               </p>
             </div>
 
+            {!enabledSkills.includes('meeting_scheduler') && (
+              <div className="rounded-lg border border-amber-300/40 bg-amber-50/10 px-3 py-2 text-xs text-amber-200">
+                Enable the <strong>Meeting Scheduler</strong> skill above to allow automatic meeting booking.
+              </div>
+            )}
+
             <div>
               <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Provider</label>
               <select
                 value={meetingProvider}
                 onChange={(e) => setMeetingProvider(e.target.value as 'none' | 'google' | 'zoom' | 'calendly')}
+                disabled={!enabledSkills.includes('meeting_scheduler')}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               >
                 <option value="none">Not connected</option>
@@ -300,6 +391,7 @@ export default function SkillsPage() {
                 type="text"
                 value={meetingTimezone}
                 onChange={(e) => setMeetingTimezone(e.target.value)}
+                disabled={!enabledSkills.includes('meeting_scheduler')}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 placeholder="UTC"
               />
@@ -313,6 +405,7 @@ export default function SkillsPage() {
                     type="text"
                     value={calendarId}
                     onChange={(e) => setCalendarId(e.target.value)}
+                    disabled={!enabledSkills.includes('meeting_scheduler')}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                     placeholder="primary"
                   />
@@ -323,7 +416,7 @@ export default function SkillsPage() {
                     <button
                       type="button"
                       onClick={() => startOAuthConnect('google')}
-                      disabled={connectingProvider === 'google'}
+                      disabled={connectingProvider === 'google' || !enabledSkills.includes('meeting_scheduler')}
                       className="px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-semibold hover:bg-brand-600 disabled:opacity-50"
                     >
                       {connectingProvider === 'google'
@@ -356,7 +449,7 @@ export default function SkillsPage() {
                   <button
                     type="button"
                     onClick={() => startOAuthConnect('zoom')}
-                    disabled={connectingProvider === 'zoom'}
+                      disabled={connectingProvider === 'zoom' || !enabledSkills.includes('meeting_scheduler')}
                     className="px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-semibold hover:bg-brand-600 disabled:opacity-50"
                   >
                     {connectingProvider === 'zoom'
@@ -388,13 +481,118 @@ export default function SkillsPage() {
                   type="url"
                   value={calendlySchedulingUrl}
                   onChange={(e) => setCalendlySchedulingUrl(e.target.value)}
+                  disabled={!enabledSkills.includes('meeting_scheduler')}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   placeholder="https://calendly.com/your-team/intro-call"
                 />
               </div>
             )}
           </div>
-        )}
+
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Support integration</h3>
+            <p className="text-xs text-gray-500 dark:text-slate-400">
+              Connect Zendesk or Freshdesk so the agent can escalate unresolved requests as support tickets.
+            </p>
+          </div>
+
+          {!enabledSkills.includes('support_escalation') && (
+            <div className="rounded-lg border border-amber-300/40 bg-amber-50/10 px-3 py-2 text-xs text-amber-200">
+              Enable the <strong>Support Escalation</strong> skill above to activate ticket creation.
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Provider</label>
+            <select
+              value={supportProvider}
+              onChange={(e) => setSupportProvider(e.target.value as 'none' | 'zendesk' | 'freshdesk')}
+              disabled={!enabledSkills.includes('support_escalation')}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+              <option value="none">Not connected</option>
+              <option value="zendesk">Zendesk</option>
+              <option value="freshdesk">Freshdesk</option>
+            </select>
+          </div>
+
+          {supportProvider === 'zendesk' && (
+            <>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Zendesk subdomain</label>
+                <input
+                  type="text"
+                  value={zendeskSubdomain}
+                  onChange={(e) => setZendeskSubdomain(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="your-company"
+                />
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">Your Zendesk URL is <code className="dark:bg-slate-800 px-1 rounded">your-company.zendesk.com</code></p>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Zendesk support email</label>
+                <input
+                  type="email"
+                  value={zendeskSupportEmail}
+                  onChange={(e) => setZendeskSupportEmail(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="support@your-company.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Zendesk API token</label>
+                <input
+                  type="password"
+                  value={zendeskApiToken}
+                  onChange={(e) => setZendeskApiToken(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder={hasZendeskToken ? 'Saved (enter to rotate)' : 'Paste API token'}
+                />
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                  {hasZendeskToken ? 'A token is already stored securely.' : 'No token configured yet.'}
+                </p>
+              </div>
+            </>
+          )}
+
+          {supportProvider === 'freshdesk' && (
+            <>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Freshdesk domain</label>
+                <input
+                  type="text"
+                  value={freshdeskDomain}
+                  onChange={(e) => setFreshdeskDomain(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="your-company"
+                />
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">Your Freshdesk URL is <code className="dark:bg-slate-800 px-1 rounded">your-company.freshdesk.com</code></p>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Freshdesk API key</label>
+                <input
+                  type="password"
+                  value={freshdeskApiKey}
+                  onChange={(e) => setFreshdeskApiKey(e.target.value)}
+                  disabled={!enabledSkills.includes('support_escalation')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder={hasFreshdeskToken ? 'Saved (enter to rotate)' : 'Paste API key'}
+                />
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                  {hasFreshdeskToken ? 'A key is already stored securely.' : 'No key configured yet. Find it under Profile Settings in Freshdesk.'}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
 
         {enabledSkills.includes('firecrawl') && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">

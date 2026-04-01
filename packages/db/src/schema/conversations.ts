@@ -2,7 +2,7 @@
  * Conversations + messages tables — the chat history store.
  */
 import { jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { businesses } from './businesses.js';
+import { businesses } from './businesses';
 
 export const conversations = pgTable('conversations', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -2,7 +2,7 @@
  * business_skill_settings — per-business skill enablement and optional config.
  */
 import { boolean, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { businesses } from './businesses.js';
+import { businesses } from './businesses';
 
 export const SKILL_NAMES = [
   'calculator',
@@ -10,6 +10,7 @@ export const SKILL_NAMES = [
   'firecrawl',
   'lead_qualification',
   'meeting_scheduler',
+  'support_escalation',
 ] as const;
 
 export type SkillName = (typeof SKILL_NAMES)[number];

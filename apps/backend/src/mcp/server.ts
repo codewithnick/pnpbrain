@@ -35,8 +35,11 @@ import { parseAllowedDomains } from '../lib/business';
 import {
   getEnabledSkillsForBusiness,
   getMeetingIntegrationForBusiness,
+  getSupportIntegrationForBusiness,
 } from '../lib/businessSkills';
 import { recordMessageUsage } from '../lib/billing';
+import { enqueueCrawlJob } from '../jobs/crawlQueue';
+import { createSupportTicket } from '../lib/supportTickets';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -97,10 +100,30 @@ export function createMcpServer(business: Business): McpServer {
       await db.insert(messages).values({ conversationId, role: 'user', content: message });
 
       // Run agent and collect full response
-      const [enabledSkills, meetingIntegration] = await Promise.all([
+      const [enabledSkills, meetingIntegration, supportIntegration] = await Promise.all([
         getEnabledSkillsForBusiness(business.id),
         getMeetingIntegrationForBusiness(business.id),
+        getSupportIntegrationForBusiness(business.id),
       ]);
+
+      const historyRows = await db
+        .select({ role: messages.role, content: messages.content })
+        .from(messages)
+        .where(eq(messages.conversationId, conversationId))
+        .orderBy(asc(messages.createdAt));
+
+      const conversationHistory = historyRows
+        .filter((row): row is { role: 'user' | 'assistant' | 'system'; content: string } =>
+          row.role === 'user' || row.role === 'assistant' || row.role === 'system'
+        )
+        .slice(-21);
+
+      const normalizedHistory =
+        conversationHistory.length > 0
+        && conversationHistory[conversationHistory.length - 1]?.role === 'user'
+        && conversationHistory[conversationHistory.length - 1]?.content === message
+          ? conversationHistory.slice(0, -1)
+          : conversationHistory;
 
       const graphInput = {
         businessId: business.id,
@@ -109,8 +132,27 @@ export function createMcpServer(business: Business): McpServer {
         businessName: business.name,
         allowedDomains: parseAllowedDomains(business.allowedDomains),
         userMessage: message,
+        conversationHistory: normalizedHistory.slice(-20),
         enabledSkills,
         meetingIntegration: meetingIntegration as unknown as Record<string, unknown>,
+        supportIntegration: supportIntegration as unknown as Record<string, unknown>,
+        createSupportTicket: async (payload: {
+          reason: string;
+          customerMessage: string;
+          customerEmail?: string;
+          customerName?: string;
+        }) =>
+          createSupportTicket({
+            businessId: business.id,
+            conversationId,
+            reason: payload.reason,
+            customerMessage: payload.customerMessage,
+            ...(payload.customerEmail ? { customerEmail: payload.customerEmail } : {}),
+            ...(payload.customerName ? { customerName: payload.customerName } : {}),
+            metadata: {
+              source: 'mcp_agent_tool',
+            },
+          }),
         ...(business.llmProvider !== null ? { llmProvider: business.llmProvider } : {}),
         ...(business.llmModel !== null ? { llmModel: business.llmModel } : {}),
         ...(business.llmApiKey !== null ? { llmApiKey: business.llmApiKey } : {}),
@@ -355,6 +397,19 @@ export function createMcpServer(business: Business): McpServer {
           status: 'queued',
         })
         .returning({ id: firecrawlJobs.id });
+
+      const queued = await enqueueCrawlJob(job!.id);
+      if (!queued) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Queue is unavailable. Ensure REDIS_URL is configured and crawl worker is running.',
+            },
+          ],
+          isError: true,
+        };
+      }
 
       return {
         content: [

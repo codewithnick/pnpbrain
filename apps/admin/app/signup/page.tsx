@@ -242,7 +242,7 @@ export default function SignupPage() {
                     onChange={(e) => setSlug(slugify(e.target.value))}
                     className="flex-1 px-3 py-2.5 text-sm bg-white focus:outline-none"
                     placeholder="acme-corp"
-                    pattern="[a-z0-9-]+"
+                    pattern="[a-z0-9\-]+"
                   />
                 </div>
                 <p className="mt-1.5 text-xs text-gray-400">

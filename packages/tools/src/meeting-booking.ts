@@ -7,16 +7,21 @@ import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 
 export interface MeetingIntegrationConfig {
-  provider: 'none' | 'google' | 'zoom' | 'calendly';
-  timezone?: string;
-  calendarId?: string;
-  googleAccessToken?: string;
-  googleRefreshToken?: string;
-  googleAccessTokenExpiresAt?: string;
-  zoomAccessToken?: string;
-  zoomRefreshToken?: string;
-  zoomAccessTokenExpiresAt?: string;
-  calendlySchedulingUrl?: string;
+  provider: string;
+  /** OAuth access token (Google or Zoom). */
+  accessToken?: string;
+  /** OAuth refresh token — used to get a fresh access token when expired. */
+  refreshToken?: string;
+  /** ISO expiry timestamp for the access token. */
+  tokenExpiresAt?: string;
+  /** Provider-specific settings. */
+  config?: {
+    calendarId?: string;
+    timezone?: string;
+    /** Calendly self-serve scheduling URL. */
+    schedulingUrl?: string;
+    [key: string]: unknown;
+  };
 }
 
 interface CreateMeetingBookingToolOptions {
@@ -36,18 +41,18 @@ function isTokenFresh(expiresAt: string | undefined): boolean {
 }
 
 async function getGoogleAccessToken(integration: MeetingIntegrationConfig): Promise<string | null> {
-  if (integration.googleAccessToken && isTokenFresh(integration.googleAccessTokenExpiresAt)) {
-    return integration.googleAccessToken;
+  if (integration.accessToken && isTokenFresh(integration.tokenExpiresAt)) {
+    return integration.accessToken;
   }
 
-  if (!integration.googleRefreshToken) {
-    return integration.googleAccessToken ?? null;
+  if (!integration.refreshToken) {
+    return integration.accessToken ?? null;
   }
 
   const clientId = process.env['GOOGLE_OAUTH_CLIENT_ID'];
   const clientSecret = process.env['GOOGLE_OAUTH_CLIENT_SECRET'];
   if (!clientId || !clientSecret) {
-    return integration.googleAccessToken ?? null;
+    return integration.accessToken ?? null;
   }
 
   const response = await fetch('https://oauth2.googleapis.com/token', {
@@ -56,37 +61,37 @@ async function getGoogleAccessToken(integration: MeetingIntegrationConfig): Prom
     body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
-      refresh_token: integration.googleRefreshToken,
+      refresh_token: integration.refreshToken,
       grant_type: 'refresh_token',
     }),
   });
 
   if (!response.ok) {
-    return integration.googleAccessToken ?? null;
+    return integration.accessToken ?? null;
   }
 
   const payload = (await response.json()) as { access_token?: string };
-  return payload.access_token ?? integration.googleAccessToken ?? null;
+  return payload.access_token ?? integration.accessToken ?? null;
 }
 
 async function getZoomAccessToken(integration: MeetingIntegrationConfig): Promise<string | null> {
-  if (integration.zoomAccessToken && isTokenFresh(integration.zoomAccessTokenExpiresAt)) {
-    return integration.zoomAccessToken;
+  if (integration.accessToken && isTokenFresh(integration.tokenExpiresAt)) {
+    return integration.accessToken;
   }
 
-  if (!integration.zoomRefreshToken) {
-    return integration.zoomAccessToken ?? null;
+  if (!integration.refreshToken) {
+    return integration.accessToken ?? null;
   }
 
   const clientId = process.env['ZOOM_OAUTH_CLIENT_ID'];
   const clientSecret = process.env['ZOOM_OAUTH_CLIENT_SECRET'];
   if (!clientId || !clientSecret) {
-    return integration.zoomAccessToken ?? null;
+    return integration.accessToken ?? null;
   }
 
   const tokenUrl = new URL('https://zoom.us/oauth/token');
   tokenUrl.searchParams.set('grant_type', 'refresh_token');
-  tokenUrl.searchParams.set('refresh_token', integration.zoomRefreshToken);
+  tokenUrl.searchParams.set('refresh_token', integration.refreshToken);
 
   const response = await fetch(tokenUrl.toString(), {
     method: 'POST',
@@ -96,11 +101,11 @@ async function getZoomAccessToken(integration: MeetingIntegrationConfig): Promis
   });
 
   if (!response.ok) {
-    return integration.zoomAccessToken ?? null;
+    return integration.accessToken ?? null;
   }
 
   const payload = (await response.json()) as { access_token?: string };
-  return payload.access_token ?? integration.zoomAccessToken ?? null;
+  return payload.access_token ?? integration.accessToken ?? null;
 }
 
 export function createMeetingBookingTool({
@@ -145,7 +150,8 @@ export function createMeetingBookingTool({
           return 'Google Calendar is selected but access token is missing in Skills settings.';
         }
 
-        const calendarId = integration.calendarId || 'primary';
+        const calendarId = integration.config?.calendarId || 'primary';
+        const timezone = integration.config?.timezone || 'UTC';
         const response = await fetch(
           `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?conferenceDataVersion=1`,
           {
@@ -157,8 +163,8 @@ export function createMeetingBookingTool({
             body: JSON.stringify({
               summary: title,
               description,
-              start: { dateTime: startUtcIso, timeZone: 'UTC' },
-              end: { dateTime: endUtcIso, timeZone: 'UTC' },
+              start: { dateTime: startUtcIso, timeZone: timezone },
+              end: { dateTime: endUtcIso, timeZone: timezone },
               attendees: [{ email: customerEmail, displayName: customerName }],
               conferenceData: {
                 createRequest: {
@@ -208,7 +214,7 @@ export function createMeetingBookingTool({
             type: 2,
             start_time: startUtcIso,
             duration: durationMinutes,
-            timezone: integration.timezone || 'UTC',
+            timezone: integration.config?.timezone || 'UTC',
             agenda: description,
             settings: {
               join_before_host: false,
@@ -238,9 +244,9 @@ export function createMeetingBookingTool({
           .join('\n');
       }
 
-      const calendlyUrl = integration.calendlySchedulingUrl?.trim();
+      const calendlyUrl = integration.config?.schedulingUrl?.trim();
       if (!calendlyUrl) {
-        return 'Calendly is selected but scheduling URL is missing in Skills settings.';
+        return 'Calendly is selected but scheduling URL is missing in Integrations settings.';
       }
 
       return [
