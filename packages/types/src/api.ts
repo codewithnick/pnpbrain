@@ -24,6 +24,18 @@ export interface ChatResponse {
 export type StreamEvent =
   | { type: 'step'; step: string }
   | { type: 'token'; token: string }
+  | {
+      type: 'thinking';
+      stage: 'tool_start' | 'tool_end' | 'tool_error' | 'chain';
+      message: string;
+      toolName?: string;
+      detail?: string;
+    }
+  | {
+      type: 'reasoning';
+      summary: string;
+      source?: 'model' | 'tool' | 'system';
+    }
   | { type: 'done'; threadId: string; message: ChatMessage }
   | { type: 'error'; error: string };
 

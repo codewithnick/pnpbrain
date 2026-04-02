@@ -163,6 +163,7 @@ interface PublicChatTokenPayload {
   type: 'public-chat';
   businessId: string;
   slug: string;
+  agentId: string;
   iat: number;
 }
 
@@ -175,7 +176,10 @@ function getPublicChatTokenSecret(): string | null {
     ?? null;
 }
 
-export function generatePublicChatToken(business: Pick<Business, 'id' | 'slug'>): string {
+export function generatePublicChatToken(
+  business: Pick<Business, 'id' | 'slug'>,
+  options: { agentId: string }
+): string {
   const secret = getPublicChatTokenSecret();
   if (!secret) {
     throw new Error('PUBLIC_CHAT_TOKEN_SECRET or SUPABASE_SERVICE_ROLE_KEY must be configured');
@@ -185,6 +189,7 @@ export function generatePublicChatToken(business: Pick<Business, 'id' | 'slug'>)
     type: 'public-chat',
     businessId: business.id,
     slug: business.slug,
+    agentId: options.agentId,
     iat: Date.now(),
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -218,7 +223,11 @@ export function verifyPublicChatToken(token: string): PublicChatTokenPayload | n
 
   try {
     const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as PublicChatTokenPayload;
-    if (payload.type !== 'public-chat' || !payload.businessId || !payload.slug || !payload.iat) {
+    if (payload.type !== 'public-chat' || !payload.businessId || !payload.slug || !payload.agentId || !payload.iat) {
+      return null;
+    }
+
+    if (typeof payload.agentId !== 'string') {
       return null;
     }
 

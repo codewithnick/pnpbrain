@@ -238,7 +238,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'GCFIS Assistant'"
+          "default": "'PNpbrain Assistant'"
         },
         "welcome_message": {
           "name": "welcome_message",

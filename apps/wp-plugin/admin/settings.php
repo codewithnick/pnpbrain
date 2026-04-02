@@ -1,6 +1,6 @@
 <?php
 /**
- * Admin settings page template for GCFIS Widget.
+ * Admin settings page template for PNpbrain Widget.
  * Included by gcfis_render_settings_page() in gcfis-widget.php.
  * All variables are already declared in that function scope.
  *
@@ -15,7 +15,7 @@
 defined( 'ABSPATH' ) || exit;
 ?>
 <div class="wrap gcfis-settings">
-    <h1><?php esc_html_e( 'GCFIS Widget Settings', 'gcfis-widget' ); ?></h1>
+    <h1><?php esc_html_e( 'PNpbrain Widget Settings', 'gcfis-widget' ); ?></h1>
 
     <?php settings_errors( GCFIS_WIDGET_OPTION ); ?>
 
@@ -41,7 +41,7 @@ defined( 'ABSPATH' ) || exit;
                         autocomplete="off"
                     />
                     <p class="description">
-                        <?php esc_html_e( 'The URL of your self-hosted GCFIS backend (apps/backend). Must begin with https://.', 'gcfis-widget' ); ?>
+                        <?php esc_html_e( 'The URL of your self-hosted PNpbrain backend (apps/backend). Must begin with https://.', 'gcfis-widget' ); ?>
                     </p>
                 </td>
             </tr>
@@ -63,7 +63,7 @@ defined( 'ABSPATH' ) || exit;
                         autocomplete="off"
                     />
                     <p class="description">
-                        <?php esc_html_e( 'Use the public chat token from your GCFIS Admin dashboard.', 'gcfis-widget' ); ?>
+                        <?php esc_html_e( 'Use the public chat token from your PNpbrain Admin dashboard.', 'gcfis-widget' ); ?>
                     </p>
                 </td>
             </tr>

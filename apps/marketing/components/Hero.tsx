@@ -65,6 +65,18 @@ export default function Hero() {
           remembers customers, and handles questions 24/7.
         </Typography>
 
+        <Typography
+          sx={{
+            mt: 1.6,
+            fontSize: { xs: '0.92rem', md: '1rem' },
+            color: 'text.secondary',
+            maxWidth: 700,
+            mx: 'auto',
+          }}
+        >
+          Why choose PNPBrain: most tools stop at answers. PNPBrain answers, takes action, and helps convert visitors into customers.
+        </Typography>
+
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="center" sx={{ mt: 4 }}>
           <Button
             component={Link}

@@ -71,13 +71,60 @@ function sanitizeAssistantReply(text: string): string {
         return false;
       }
 
+      // Remove narrative leakage that exposes internal tool/function execution details.
+      if (
+        /^the output of\s+[`'\"]?[a-zA-Z0-9_:-]+(?:\(\))?[`'\"]?\s+function\s+is\s+used\b/i.test(
+          trimmed
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        /^the output of\s+[`'\"]?[a-zA-Z0-9_:-]+(?:\(\))?[`'\"]?\s+was\s+used\s+to\s+format\s+this\s+answer\.?$/i.test(
+          trimmed
+        )
+      ) {
+        return false;
+      }
+
+      if (/\b(internal (tool|function)|tool (input|output|invocation)|function signature)\b/i.test(trimmed)) {
+        return false;
+      }
+
       return true;
     })
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
+  if (!filtered) {
+    return 'I completed the request, but could not format a final response. Please ask me to try again.';
+  }
+
   return filtered;
+}
+
+function isInternalToolNarrationOnly(text: string): boolean {
+  const mentionsTool =
+    /\b(get_datetime|calculator|qualify_lead|firecrawl_scrape|propose_meeting_slots|book_company_meeting|route_qualified_lead)\b/i.test(
+      text
+    );
+  const narrationStyle = /\b(i\s+used|output of|function\s+is\s+used|used\s+to\s+format)\b/i.test(text);
+  const hasConcreteValue = /\d{4}-\d{2}-\d{2}|\bUTC\b|\d{1,2}:\d{2}\b|\bAM\b|\bPM\b/.test(text);
+  return mentionsTool && narrationStyle && !hasConcreteValue;
+}
+
+function userMessageNeedsEmpathy(message: string): boolean {
+  return /(frustrat|upset|angry|disappoint|wrong|mistake|not\s+working|issue|problem|bug|doesn'?t\s+work)/i.test(
+    message
+  );
+}
+
+function assistantStartsWithEmpathy(text: string): boolean {
+  return /^(i\s+(am\s+)?sorry|sorry|i\s+understand|that\s+sounds\s+frustrating|thanks\s+for\s+flagging)/i.test(
+    text.trim()
+  );
 }
 
 function getCrawlErrorHint(errorMessage: string | null): string | null {
@@ -345,6 +392,7 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
         };
 
         let fullResponse = '';
+        const responseStartedAt = Date.now();
         console.log('[MCP/chat] 🚀 Running graph with input - skills:', enabledSkills);
         const graphStream = runGraph(graphInput);
         let eventCount = 0;
@@ -379,9 +427,24 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
             console.log('[MCP/chat]   Error:', eventData['error'] ?? 'unknown');
           }
         }
+        const responseTimeMs = Math.max(0, Date.now() - responseStartedAt);
         console.log('[MCP/chat] ✅ Graph stream complete - events received:', eventCount);
+        console.log('[MCP/chat] ⏱️ Agent response time (ms):', responseTimeMs);
 
         fullResponse = sanitizeAssistantReply(fullResponse);
+        if (isInternalToolNarrationOnly(fullResponse)) {
+          if (/\b(date|time|timezone|utc)\b/i.test(message)) {
+            fullResponse = `Current date and time in UTC: ${new Date().toISOString()}.`;
+          } else {
+            fullResponse =
+              'I completed the request, but the final answer was not formatted correctly. Please ask again and I will provide a direct result.';
+          }
+        }
+
+        if (userMessageNeedsEmpathy(message) && !assistantStartsWithEmpathy(fullResponse)) {
+          fullResponse = `I understand this is frustrating, and I appreciate you flagging it. ${fullResponse}`;
+        }
+
         if (!fullResponse) {
           fullResponse =
             'I do not have enough verified company data for a specific answer yet. Could you share one more detail?';
@@ -391,7 +454,15 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
         console.log('[MCP/chat] 💾 Persisting response (length:', fullResponse.length, ')');
         await db
           .insert(messages)
-          .values({ conversationId, role: 'assistant', content: fullResponse });
+          .values({
+            conversationId,
+            role: 'assistant',
+            content: fullResponse,
+            metadata: {
+              responseTimeMs,
+              agentId: agent.id,
+            },
+          });
 
         // Background: memory extraction
         console.log('[MCP/chat] 📚 Queuing memory extraction');
@@ -535,6 +606,7 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
           id: messages.id,
           role: messages.role,
           content: messages.content,
+          metadata: messages.metadata,
           createdAt: messages.createdAt,
         })
         .from(messages)
@@ -554,6 +626,10 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
                   id: m.id,
                   role: m.role,
                   content: m.content,
+                  responseTimeMs:
+                    m.role === 'assistant' && m.metadata && typeof m.metadata === 'object'
+                      ? (m.metadata as Record<string, unknown>)['responseTimeMs'] ?? null
+                      : null,
                   createdAt: m.createdAt.toISOString(),
                 })),
               },

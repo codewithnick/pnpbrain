@@ -13,6 +13,8 @@ interface BusinessConfig {
   slug:           string;
   botName:        string;
   welcomeMessage: string;
+  id:             string;
+  agentId?:       string;
   primaryColor:   string;
   widgetPosition: string;
   widgetTheme:    string;
@@ -21,10 +23,13 @@ interface BusinessConfig {
 }
 
 async function fetchConfig(slug: string): Promise<BusinessConfig | null> {
-  const base = process.env['NEXT_PUBLIC_BACKEND_URL'] ?? process.env['BACKEND_URL'] ?? '';
+  const base =
+    process.env['NEXT_PUBLIC_BACKEND_URL']
+    ?? process.env['BACKEND_URL']
+    ?? (process.env['NODE_ENV'] === 'development' ? 'http://localhost:3011' : '');
   try {
     const res = await fetch(`${base}/api/public/${encodeURIComponent(slug)}`, {
-      next: { revalidate: 60 }, // ISR — refresh cached config every 60s
+      cache: 'no-store',
     });
     if (!res.ok) return null;
     const json = (await res.json()) as { data?: BusinessConfig };

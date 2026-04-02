@@ -19,9 +19,22 @@ export default function ThemeSettingsPage() {
   const [primaryColor, setPrimaryColor] = useState('#6366f1');
   const [botName, setBotName] = useState('Assistant');
   const [welcomeMessage, setWelcomeMessage] = useState('Hi! How can I help you today?');
+  const [placeholder, setPlaceholder] = useState('Type a message...');
   const [widgetPosition, setWidgetPosition] = useState<'bottom-right' | 'bottom-left'>('bottom-right');
   const [widgetTheme, setWidgetTheme] = useState<'light' | 'dark'>('light');
   const [showAvatar, setShowAvatar] = useState(true);
+  const [assistantAvatarMode, setAssistantAvatarMode] = useState<'initial' | 'emoji' | 'image'>('initial');
+  const [assistantAvatarText, setAssistantAvatarText] = useState('A');
+  const [assistantAvatarImageUrl, setAssistantAvatarImageUrl] = useState('');
+  const [showAssistantAvatar, setShowAssistantAvatar] = useState(true);
+  const [showUserAvatar, setShowUserAvatar] = useState(false);
+  const [userAvatarText, setUserAvatarText] = useState('You');
+  const [headerSubtitle, setHeaderSubtitle] = useState('Online');
+  const [chatBackgroundColor, setChatBackgroundColor] = useState('#f9fafb');
+  const [userMessageColor, setUserMessageColor] = useState('');
+  const [assistantMessageColor, setAssistantMessageColor] = useState('#ffffff');
+  const [borderRadiusPx, setBorderRadiusPx] = useState(16);
+  const [showPoweredBy, setShowPoweredBy] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -40,6 +53,7 @@ export default function ThemeSettingsPage() {
         if (typeof active.primaryColor === 'string') setPrimaryColor(active.primaryColor);
         if (typeof active.botName === 'string') setBotName(active.botName);
         if (typeof active.welcomeMessage === 'string') setWelcomeMessage(active.welcomeMessage);
+        if (typeof active.placeholder === 'string') setPlaceholder(active.placeholder);
         if (active.widgetPosition === 'bottom-left' || active.widgetPosition === 'bottom-right') {
           setWidgetPosition(active.widgetPosition);
         }
@@ -47,6 +61,24 @@ export default function ThemeSettingsPage() {
           setWidgetTheme(active.widgetTheme);
         }
         if (typeof active.showAvatar === 'boolean') setShowAvatar(active.showAvatar);
+        if (
+          active.assistantAvatarMode === 'initial'
+          || active.assistantAvatarMode === 'emoji'
+          || active.assistantAvatarMode === 'image'
+        ) {
+          setAssistantAvatarMode(active.assistantAvatarMode);
+        }
+        if (typeof active.assistantAvatarText === 'string') setAssistantAvatarText(active.assistantAvatarText);
+        if (typeof active.assistantAvatarImageUrl === 'string') setAssistantAvatarImageUrl(active.assistantAvatarImageUrl);
+        if (typeof active.showAssistantAvatar === 'boolean') setShowAssistantAvatar(active.showAssistantAvatar);
+        if (typeof active.showUserAvatar === 'boolean') setShowUserAvatar(active.showUserAvatar);
+        if (typeof active.userAvatarText === 'string') setUserAvatarText(active.userAvatarText);
+        if (typeof active.headerSubtitle === 'string') setHeaderSubtitle(active.headerSubtitle);
+        if (typeof active.chatBackgroundColor === 'string') setChatBackgroundColor(active.chatBackgroundColor);
+        if (typeof active.userMessageColor === 'string') setUserMessageColor(active.userMessageColor);
+        if (typeof active.assistantMessageColor === 'string') setAssistantMessageColor(active.assistantMessageColor);
+        if (typeof active.borderRadiusPx === 'number') setBorderRadiusPx(active.borderRadiusPx);
+        if (typeof active.showPoweredBy === 'boolean') setShowPoweredBy(active.showPoweredBy);
         setLoading(false);
       } catch {
         setError('Failed to load agent theme configuration.');
@@ -74,9 +106,22 @@ export default function ThemeSettingsPage() {
         primaryColor,
         botName,
         welcomeMessage,
+        placeholder,
         widgetPosition,
         widgetTheme,
         showAvatar,
+        assistantAvatarMode,
+        assistantAvatarText,
+        assistantAvatarImageUrl: assistantAvatarImageUrl.trim() || null,
+        showAssistantAvatar,
+        showUserAvatar,
+        userAvatarText,
+        headerSubtitle,
+        chatBackgroundColor,
+        userMessageColor: userMessageColor.trim() || null,
+        assistantMessageColor,
+        borderRadiusPx,
+        showPoweredBy,
       }),
     });
 
@@ -125,6 +170,13 @@ export default function ThemeSettingsPage() {
 
       <Card title="Greeting" description="The first message shown when the chat opens.">
         <textarea value={welcomeMessage} onChange={(e) => setWelcomeMessage(e.target.value)} rows={4} className={`${fieldCls} resize-none`} maxLength={200} />
+        <input
+          value={placeholder}
+          onChange={(e) => setPlaceholder(e.target.value)}
+          className={`${fieldCls} mt-3`}
+          placeholder="Type a message..."
+          maxLength={120}
+        />
       </Card>
 
       <Card title="Widget layout" description="Choose where the launcher appears and how the surface is styled.">
@@ -142,27 +194,80 @@ export default function ThemeSettingsPage() {
           <input type="checkbox" checked={showAvatar} onChange={(e) => setShowAvatar(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
           Show the assistant avatar in the chat header
         </label>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs text-gray-500 dark:text-slate-400">Panel background</label>
+            <input type="color" value={chatBackgroundColor} onChange={(e) => setChatBackgroundColor(e.target.value)} className="h-10 w-full rounded-lg border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-500 dark:text-slate-400">Assistant bubble</label>
+            <input type="color" value={assistantMessageColor} onChange={(e) => setAssistantMessageColor(e.target.value)} className="h-10 w-full rounded-lg border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900" />
+          </div>
+        </div>
+        <div className="mt-3">
+          <label className="mb-1 block text-xs text-gray-500 dark:text-slate-400">User bubble override (optional hex)</label>
+          <input
+            value={userMessageColor}
+            onChange={(e) => setUserMessageColor(e.target.value)}
+            className={fieldCls}
+            placeholder="Leave blank to use primary color"
+          />
+        </div>
+        <div className="mt-3">
+          <label className="mb-1 block text-xs text-gray-500 dark:text-slate-400">Panel border radius ({borderRadiusPx}px)</label>
+          <input type="range" min={8} max={32} value={borderRadiusPx} onChange={(e) => setBorderRadiusPx(Number(e.target.value))} className="w-full" />
+        </div>
+      </Card>
+
+      <Card title="Avatar and header" description="Control assistant/user avatars and header metadata.">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <select value={assistantAvatarMode} onChange={(e) => setAssistantAvatarMode(e.target.value as 'initial' | 'emoji' | 'image')} className={fieldCls}>
+            <option value="initial">Assistant avatar: Initial</option>
+            <option value="emoji">Assistant avatar: Emoji/Text</option>
+            <option value="image">Assistant avatar: Image URL</option>
+          </select>
+          <input value={assistantAvatarText} onChange={(e) => setAssistantAvatarText(e.target.value)} className={fieldCls} placeholder="AI" maxLength={8} />
+        </div>
+        <input value={assistantAvatarImageUrl} onChange={(e) => setAssistantAvatarImageUrl(e.target.value)} className={`${fieldCls} mt-3`} placeholder="https://..." />
+        <div className="grid gap-4 sm:grid-cols-2 mt-3">
+          <input value={headerSubtitle} onChange={(e) => setHeaderSubtitle(e.target.value)} className={fieldCls} placeholder="Online" maxLength={80} />
+          <input value={userAvatarText} onChange={(e) => setUserAvatarText(e.target.value)} className={fieldCls} placeholder="You" maxLength={12} />
+        </div>
+        <label className="mt-4 flex items-center gap-3 text-sm text-gray-600 dark:text-slate-300">
+          <input type="checkbox" checked={showAssistantAvatar} onChange={(e) => setShowAssistantAvatar(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+          Show assistant avatar (header and assistant messages)
+        </label>
+        <label className="mt-3 flex items-center gap-3 text-sm text-gray-600 dark:text-slate-300">
+          <input type="checkbox" checked={showUserAvatar} onChange={(e) => setShowUserAvatar(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+          Show user avatar
+        </label>
+        <label className="mt-3 flex items-center gap-3 text-sm text-gray-600 dark:text-slate-300">
+          <input type="checkbox" checked={showPoweredBy} onChange={(e) => setShowPoweredBy(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+          Show powered-by label
+        </label>
       </Card>
 
       <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">Preview</p>
-        <div className="mt-4 max-w-sm rounded-3xl border border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+        <div className="mt-4 max-w-sm rounded-3xl border border-gray-200 p-4 dark:border-slate-700 dark:bg-slate-800" style={{ backgroundColor: chatBackgroundColor }}>
           <div className={`rounded-2xl px-4 py-3 text-white ${widgetTheme === 'dark' ? 'bg-gray-900' : ''}`} style={widgetTheme === 'light' ? { backgroundColor: primaryColor } : undefined}>
             <div className="flex items-center gap-3">
-              {showAvatar && (
+              {showAvatar && showAssistantAvatar && (
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sm font-bold">
-                  {botName[0] ?? 'A'}
+                  {assistantAvatarText || botName[0] || 'A'}
                 </div>
               )}
               <div>
                 <p className="text-sm font-semibold">{botName}</p>
-                <p className="text-xs opacity-75">Online</p>
+                <p className="text-xs opacity-75">{headerSubtitle}</p>
               </div>
             </div>
           </div>
-          <div className="mt-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+          <div className="mt-3 rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" style={{ backgroundColor: assistantMessageColor }}>
             {welcomeMessage}
           </div>
+          <div className="mt-3 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-400 dark:border-slate-700 dark:bg-slate-900">{placeholder}</div>
+          {showPoweredBy ? <div className="mt-2 text-center text-[10px] text-gray-300">Powered by PNPBrain</div> : null}
           <div className="mt-3 text-xs text-gray-400 dark:text-slate-500">Launcher position: {widgetPosition.replace('-', ' ')}</div>
         </div>
       </div>

@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import type { KnowledgeDocument } from '@/lib/api-types';
-import { fetchBackend } from '@/lib/supabase';
+import { fetchBackend, getSelectedAgentId } from '@/lib/supabase';
 
 /** Fetches documents from the backend */
 async function fetchDocuments(): Promise<KnowledgeDocument[]> {
@@ -43,6 +43,7 @@ export default function KnowledgePage() {
     e.preventDefault();
     setCreating(true);
     setError('');
+    const selectedAgentId = getSelectedAgentId();
 
     try {
       let res: Response;
@@ -52,6 +53,7 @@ export default function KnowledgePage() {
         formData.append('title', title);
         formData.append('file', file);
         if (sourceUrl.trim()) formData.append('sourceUrl', sourceUrl.trim());
+        if (selectedAgentId) formData.append('agentId', selectedAgentId);
 
         res = await fetchBackend('/api/knowledge', {
           method: 'POST',
@@ -65,7 +67,12 @@ export default function KnowledgePage() {
         res = await fetchBackend('/api/knowledge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, content, sourceUrl: sourceUrl || undefined }),
+          body: JSON.stringify({
+            title,
+            content,
+            sourceUrl: sourceUrl || undefined,
+            agentId: selectedAgentId || undefined,
+          }),
         });
       }
 
@@ -74,8 +81,9 @@ export default function KnowledgePage() {
         throw new Error(json.error ?? 'Failed to create document');
       }
 
-      const json = (await res.json()) as { ok: boolean; data: KnowledgeDocument };
-      setDocuments((prev) => [json.data, ...prev]);
+      await res.json();
+      const refreshedDocuments = await fetchDocuments();
+      setDocuments(refreshedDocuments);
       setTitle('');
       setContent('');
       setSourceUrl('');

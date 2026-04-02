@@ -8,10 +8,15 @@
  */
 
 import Stripe from 'stripe';
+import Razorpay from 'razorpay';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getDb } from '@gcfis/db/client';
 import { businessCreditLedger, businesses } from '@gcfis/db/schema';
 import { eq, gte, sql } from 'drizzle-orm';
 import type { Business } from '@gcfis/db';
+
+export const TOP_UP_MEDIUMS = ['any', 'card', 'wallet', 'bank_debit', 'razorpay', 'manual'] as const;
+export type TopUpMedium = (typeof TOP_UP_MEDIUMS)[number];
 
 // ─── Stripe client ────────────────────────────────────────────────────────────
 
@@ -19,6 +24,16 @@ function getStripe(): Stripe {
   const key = process.env['STRIPE_SECRET_KEY'];
   if (!key) throw new Error('STRIPE_SECRET_KEY is not configured');
   return new Stripe(key);
+}
+
+function getRazorpay(): Razorpay {
+  const keyId = process.env['RAZORPAY_KEY_ID'];
+  const keySecret = process.env['RAZORPAY_KEY_SECRET'];
+  if (!keyId || !keySecret) {
+    throw new Error('RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be configured');
+  }
+
+  return new Razorpay({ key_id: keyId, key_secret: keySecret });
 }
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -157,7 +172,7 @@ export async function createPortalSession(
  *
  * Designed to be called fire-and-forget (non-blocking from chat route).
  */
-export async function recordMessageUsage(business: Business): Promise<void> {
+export async function recordMessageUsage(business: Business, agentId?: string): Promise<void> {
   const db = getDb();
   const [updated] = await db
     .update(businesses)
@@ -185,6 +200,7 @@ export async function recordMessageUsage(business: Business): Promise<void> {
     reason: 'usage_debit',
     metadata: {
       source: 'recordMessageUsage',
+      ...(agentId ? { agentId } : {}),
       creditsUsedTotal: updated.creditsUsedTotal,
     },
   });
@@ -194,6 +210,8 @@ export async function topUpBusinessCredits(input: {
   businessId: string;
   amount: number;
   createdByUserId: string;
+  reason?: 'top_up' | 'manual_adjustment' | 'refund';
+  referenceId?: string;
   metadata?: Record<string, unknown>;
 }): Promise<{ creditBalance: number; creditsPurchasedTotal: number }> {
   const db = getDb();
@@ -218,12 +236,281 @@ export async function topUpBusinessCredits(input: {
     businessId: input.businessId,
     amount: input.amount,
     balanceAfter: updated.creditBalance,
-    reason: 'top_up',
+    reason: input.reason ?? 'top_up',
+    referenceId: input.referenceId,
     createdByUserId: input.createdByUserId,
     metadata: input.metadata,
   });
 
   return updated;
+}
+
+function getTopUpUnitAmountCents(): number {
+  const raw = process.env['STRIPE_CREDIT_UNIT_AMOUNT_CENTS'];
+  const parsed = Number(raw ?? 100);
+  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
+    throw new Error('STRIPE_CREDIT_UNIT_AMOUNT_CENTS must be a positive integer');
+  }
+
+  return parsed;
+}
+
+function getStripePaymentMethodTypes(medium: TopUpMedium): Stripe.Checkout.SessionCreateParams.PaymentMethodType[] {
+  switch (medium) {
+    case 'card':
+      return ['card'];
+    case 'wallet':
+      return ['card', 'link'];
+    case 'bank_debit':
+      return ['us_bank_account'];
+    case 'any':
+      return ['card', 'link', 'us_bank_account'];
+    case 'manual':
+    case 'razorpay':
+      return ['card'];
+    default:
+      return ['card'];
+  }
+}
+
+function getRazorpayUnitAmountPaise(): number {
+  const raw = process.env['RAZORPAY_CREDIT_UNIT_AMOUNT_PAISE'];
+  const parsed = Number(raw ?? 100);
+  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
+    throw new Error('RAZORPAY_CREDIT_UNIT_AMOUNT_PAISE must be a positive integer');
+  }
+
+  return parsed;
+}
+
+export async function createTopUpCheckoutSession(input: {
+  business: Business;
+  email: string;
+  returnUrl: string;
+  credits: number;
+  medium: TopUpMedium;
+  initiatedByUserId: string;
+}): Promise<string> {
+  if (!Number.isInteger(input.credits) || input.credits <= 0) {
+    throw new Error('credits must be a positive integer');
+  }
+
+  if (!TOP_UP_MEDIUMS.includes(input.medium)) {
+    throw new Error('Unsupported top-up medium');
+  }
+
+  const stripe = getStripe();
+  const customerId = await getOrCreateStripeCustomer(input.business, input.email);
+  const unitAmount = getTopUpUnitAmountCents();
+
+  const session = await stripe.checkout.sessions.create({
+    customer: customerId,
+    mode: 'payment',
+    payment_method_types: getStripePaymentMethodTypes(input.medium),
+    line_items: [
+      {
+        price_data: {
+          currency: process.env['STRIPE_CURRENCY'] ?? 'usd',
+          unit_amount: unitAmount,
+          product_data: {
+            name: 'PNpbrain Credit Refill',
+            description: `${input.credits.toLocaleString()} API credits`,
+          },
+        },
+        quantity: input.credits,
+      },
+    ],
+    metadata: {
+      kind: 'credit_top_up',
+      businessId: input.business.id,
+      credits: String(input.credits),
+      medium: input.medium,
+      initiatedByUserId: input.initiatedByUserId,
+    },
+    success_url: `${input.returnUrl}?billing=topup_success`,
+    cancel_url: `${input.returnUrl}?billing=topup_canceled`,
+  });
+
+  if (!session.url) throw new Error('Stripe did not return a checkout URL');
+  return session.url;
+}
+
+export async function settleTopUpCheckoutSession(
+  session: Stripe.Checkout.Session
+): Promise<void> {
+  if (session.mode !== 'payment') return;
+  if (session.payment_status !== 'paid') return;
+
+  const kind = session.metadata?.['kind'];
+  if (kind !== 'credit_top_up') return;
+
+  const businessId = session.metadata?.['businessId'];
+  const creditsRaw = session.metadata?.['credits'];
+  const initiatedByUserId = session.metadata?.['initiatedByUserId'];
+  const medium = session.metadata?.['medium'] ?? 'any';
+
+  const credits = Number(creditsRaw);
+  if (!businessId || !initiatedByUserId || !Number.isInteger(credits) || credits <= 0) {
+    throw new Error('Invalid top-up checkout metadata');
+  }
+
+  const db = getDb();
+  const existing = await db
+    .select({ id: businessCreditLedger.id })
+    .from(businessCreditLedger)
+    .where(eq(businessCreditLedger.referenceId, session.id))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return;
+  }
+
+  await topUpBusinessCredits({
+    businessId,
+    amount: credits,
+    createdByUserId: initiatedByUserId,
+    reason: 'top_up',
+    referenceId: session.id,
+    metadata: {
+      source: 'stripe_checkout',
+      medium,
+      checkoutSessionId: session.id,
+      paymentIntentId: session.payment_intent,
+      amountSubtotal: session.amount_subtotal,
+      amountTotal: session.amount_total,
+      currency: session.currency,
+    },
+  });
+}
+
+export async function createRazorpayTopUpPaymentLink(input: {
+  business: Business;
+  email: string;
+  returnUrl: string;
+  credits: number;
+  initiatedByUserId: string;
+}): Promise<string> {
+  if (!Number.isInteger(input.credits) || input.credits <= 0) {
+    throw new Error('credits must be a positive integer');
+  }
+
+  const unitAmountPaise = getRazorpayUnitAmountPaise();
+  const amountPaise = unitAmountPaise * input.credits;
+  const razorpay = getRazorpay();
+  const customerEmail = input.email.trim() || `${input.business.id}@pnpbrain.local`;
+
+  const paymentLink = await razorpay.paymentLink.create({
+    amount: amountPaise,
+    currency: process.env['RAZORPAY_CURRENCY'] ?? 'INR',
+    accept_partial: false,
+    description: `PNpbrain Credit Refill (${input.credits} credits)`,
+    customer: {
+      name: input.business.name,
+      email: customerEmail,
+    },
+    notify: {
+      sms: false,
+      email: true,
+    },
+    reminder_enable: false,
+    callback_url: `${input.returnUrl}?billing=topup_success&provider=razorpay`,
+    callback_method: 'get',
+    notes: {
+      kind: 'credit_top_up',
+      businessId: input.business.id,
+      credits: String(input.credits),
+      medium: 'razorpay',
+      initiatedByUserId: input.initiatedByUserId,
+    },
+  });
+
+  const shortUrl = (paymentLink as { short_url?: string }).short_url;
+  if (!shortUrl) {
+    throw new Error('Razorpay did not return a payment URL');
+  }
+
+  return shortUrl;
+}
+
+export function verifyRazorpayWebhookSignature(payload: Buffer, signature: string): boolean {
+  const secret = process.env['RAZORPAY_WEBHOOK_SECRET'];
+  if (!secret) {
+    throw new Error('RAZORPAY_WEBHOOK_SECRET is not configured');
+  }
+
+  const digest = createHmac('sha256', secret).update(payload).digest('hex');
+  const digestBuffer = Buffer.from(digest, 'utf8');
+  const signatureBuffer = Buffer.from(signature, 'utf8');
+
+  if (digestBuffer.length !== signatureBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(digestBuffer, signatureBuffer);
+}
+
+type RazorpayWebhookPayment = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  notes?: Record<string, string | undefined>;
+};
+
+type RazorpayWebhookPayload = {
+  event: string;
+  payload?: {
+    payment?: {
+      entity?: RazorpayWebhookPayment;
+    };
+  };
+};
+
+export async function settleRazorpayPaymentCapture(event: RazorpayWebhookPayload): Promise<void> {
+  if (event.event !== 'payment.captured') return;
+
+  const payment = event.payload?.payment?.entity;
+  if (!payment || payment.status !== 'captured') return;
+
+  const kind = payment.notes?.['kind'];
+  if (kind !== 'credit_top_up') return;
+
+  const businessId = payment.notes?.['businessId'];
+  const creditsRaw = payment.notes?.['credits'];
+  const initiatedByUserId = payment.notes?.['initiatedByUserId'];
+  const medium = payment.notes?.['medium'] ?? 'razorpay';
+
+  const credits = Number(creditsRaw);
+  if (!businessId || !initiatedByUserId || !Number.isInteger(credits) || credits <= 0) {
+    throw new Error('Invalid Razorpay top-up metadata');
+  }
+
+  const referenceId = `razorpay:${payment.id}`;
+  const db = getDb();
+  const existing = await db
+    .select({ id: businessCreditLedger.id })
+    .from(businessCreditLedger)
+    .where(eq(businessCreditLedger.referenceId, referenceId))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return;
+  }
+
+  await topUpBusinessCredits({
+    businessId,
+    amount: credits,
+    createdByUserId: initiatedByUserId,
+    reason: 'top_up',
+    referenceId,
+    metadata: {
+      source: 'razorpay_payment_link',
+      medium,
+      paymentId: payment.id,
+      amount: payment.amount,
+      currency: payment.currency,
+    },
+  });
 }
 
 // ─── Webhook helpers ──────────────────────────────────────────────────────────

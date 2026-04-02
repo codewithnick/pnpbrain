@@ -67,7 +67,24 @@ export class ConversationsController {
     const data = conversationRows.map((conversation) => {
       const rows = grouped.get(conversation.id) ?? [];
       const lastMessage = rows[0];
+      const orderedRows = [...rows].reverse();
+      const firstMessage = orderedRows[0];
+      const firstUserMessage = orderedRows.find((row) => row.role === 'user');
+      const firstAssistantMessage = firstUserMessage
+        ? orderedRows.find(
+            (row) => row.role === 'assistant' && row.createdAt >= firstUserMessage.createdAt,
+          )
+        : orderedRows.find((row) => row.role === 'assistant');
+      const assistantResponseMs =
+        firstUserMessage && firstAssistantMessage
+          ? Math.max(0, firstAssistantMessage.createdAt.getTime() - firstUserMessage.createdAt.getTime())
+          : null;
+      const conversationDurationMs =
+        firstMessage && lastMessage
+          ? Math.max(0, lastMessage.createdAt.getTime() - firstMessage.createdAt.getTime())
+          : null;
       const userMessages = rows.filter((row) => row.role === 'user').length;
+      const assistantMessages = rows.filter((row) => row.role === 'assistant').length;
 
       return {
         id: conversation.id,
@@ -76,6 +93,9 @@ export class ConversationsController {
         updatedAt: conversation.updatedAt.toISOString(),
         messageCount: rows.length,
         userMessageCount: userMessages,
+        assistantMessageCount: assistantMessages,
+        firstResponseMs: assistantResponseMs,
+        conversationDurationMs,
         preview: lastMessage?.content.slice(0, 160) ?? '',
         lastMessageAt: lastMessage?.createdAt.toISOString() ?? conversation.updatedAt.toISOString(),
         lastMessageRole: lastMessage?.role ?? null,
@@ -116,7 +136,7 @@ export class ConversationsController {
       .where(eq(conversations.id, id))
       .limit(1);
 
-    if (!conversation || conversation.businessId !== auth.businessId) {
+    if (!conversation || conversation?.businessId !== auth.businessId) {
       return res.status(404).json({ ok: false, error: 'Conversation not found' });
     }
 
@@ -129,6 +149,7 @@ export class ConversationsController {
         id: messages.id,
         role: messages.role,
         content: messages.content,
+        metadata: messages.metadata,
         createdAt: messages.createdAt,
       })
       .from(messages)
@@ -137,7 +158,21 @@ export class ConversationsController {
 
     return res.json({
       ok: true,
-      data: { ...conversation, messages: messageRows },
+      data: {
+        ...conversation,
+        messages: messageRows.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: message.createdAt,
+          responseTimeMs:
+            message.role === 'assistant'
+            && message.metadata
+            && typeof message.metadata === 'object'
+              ? (message.metadata as Record<string, unknown>)['responseTimeMs'] ?? null
+              : null,
+        })),
+      },
     });
   };
 }

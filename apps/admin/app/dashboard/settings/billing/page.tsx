@@ -7,19 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-function getSupabase() {
-  return createClient(
-    process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '',
-    process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY'] ?? ''
-  );
-}
-
-async function getToken(): Promise<string> {
-  const { data } = await getSupabase().auth.getSession();
-  return data.session?.access_token ?? '';
-}
+import { fetchBackend } from '@/lib/supabase';
 
 type BillingStatus = {
   status: 'trialing' | 'active' | 'past_due' | 'canceled';
@@ -39,6 +27,8 @@ type BillingStatus = {
   hasStripeCustomer: boolean;
 };
 
+type TopUpMedium = 'any' | 'card' | 'wallet' | 'bank_debit' | 'razorpay' | 'manual';
+
 export default function BillingPage() {
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,14 +36,10 @@ export default function BillingPage() {
   const [error, setError] = useState('');
   const [flashMessage, setFlashMessage] = useState('');
   const [topUpCredits, setTopUpCredits] = useState('100');
-
-  const base = process.env['NEXT_PUBLIC_BACKEND_URL'] ?? '';
+  const [topUpMedium, setTopUpMedium] = useState<TopUpMedium>('any');
 
   async function loadBilling() {
-    const token = await getToken();
-    const res = await fetch(`${base}/api/billing/status`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetchBackend('/api/billing/status');
     if (!res.ok) {
       setError('Failed to load billing information.');
       setLoading(false);
@@ -67,7 +53,7 @@ export default function BillingPage() {
 
   useEffect(() => {
     void loadBilling();
-  }, [base]);
+  }, []);
 
   async function handleTopUp() {
     setActionLoading(true);
@@ -80,19 +66,30 @@ export default function BillingPage() {
         return;
       }
 
-      const token = await getToken();
-      const res = await fetch(`${base}/api/billing/top-up`, {
+      const endpoint = topUpMedium === 'manual' ? '/api/billing/top-up' : '/api/billing/top-up/checkout';
+      const res = await fetchBackend(endpoint, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ credits: amount }),
+        body: JSON.stringify({ credits: amount, medium: topUpMedium }),
       });
-      const json = (await res.json()) as { ok: boolean; error?: string };
+      const json = (await res.json()) as { ok: boolean; error?: string; url?: string };
       if (!res.ok) {
         setError(json.error ?? 'Failed to top up credits.');
         setActionLoading(false);
+        return;
+      }
+
+      if (topUpMedium !== 'manual') {
+        const checkoutUrl = json.url;
+        if (!checkoutUrl) {
+          setError('Checkout URL missing from billing response.');
+          setActionLoading(false);
+          return;
+        }
+
+        window.location.href = checkoutUrl;
         return;
       }
 
@@ -237,6 +234,23 @@ export default function BillingPage() {
 
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4 dark:border-slate-800 dark:bg-slate-900">
         <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Top up credits</h2>
+        <div className="space-y-2">
+          <label className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">
+            Refill medium
+          </label>
+          <select
+            value={topUpMedium}
+            onChange={(event) => setTopUpMedium(event.target.value as TopUpMedium)}
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+          >
+            <option value="any">Any supported medium (recommended)</option>
+            <option value="card">Card only</option>
+            <option value="wallet">Wallet / Link</option>
+            <option value="bank_debit">Bank debit (ACH)</option>
+            <option value="razorpay">Razorpay</option>
+            <option value="manual">Manual direct credit refill</option>
+          </select>
+        </div>
         <div className="flex gap-3">
           <input
             type="number"
@@ -252,11 +266,17 @@ export default function BillingPage() {
             disabled={actionLoading}
             className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-60 transition-colors"
           >
-            {actionLoading ? 'Adding…' : 'Add credits'}
+            {actionLoading
+              ? topUpMedium === 'manual'
+                ? 'Adding…'
+                : 'Opening…'
+              : topUpMedium === 'manual'
+                ? 'Add credits now'
+                : 'Continue to checkout'}
           </button>
         </div>
         <p className="text-xs text-gray-400 dark:text-slate-500">
-          This currently performs a direct business credit top-up and records the transaction in the backend ledger.
+          Manual refill applies credits instantly. Online mediums create a secure Stripe checkout and add credits after payment succeeds.
         </p>
       </div>
     </div>

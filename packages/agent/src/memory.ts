@@ -7,7 +7,7 @@
 
 import { getDb } from '@gcfis/db/client';
 import { agentMemoryFacts, conversations, memoryFacts } from '@gcfis/db/schema';
-import { and, asc, eq, isNull, or } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { MEMORY_EXTRACTION_PROMPT } from './prompts.js';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { LlmService } from './llm.js';
@@ -98,9 +98,7 @@ export class MemoryService {
       .where(
         and(
           eq(agentMemoryFacts.businessId, params.businessId),
-          params.agentId
-            ? or(eq(agentMemoryFacts.agentId, params.agentId), isNull(agentMemoryFacts.agentId))
-            : undefined
+          params.agentId ? eq(agentMemoryFacts.agentId, params.agentId) : undefined
         )
       )
       .orderBy(asc(agentMemoryFacts.createdAt));
@@ -114,9 +112,7 @@ export class MemoryService {
       .where(
         and(
           eq(agentMemoryFacts.businessId, businessId),
-          agentId
-            ? or(eq(agentMemoryFacts.agentId, agentId), isNull(agentMemoryFacts.agentId))
-            : undefined
+          agentId ? eq(agentMemoryFacts.agentId, agentId) : undefined
         )
       )
       .orderBy(asc(agentMemoryFacts.createdAt));

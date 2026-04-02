@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, gte } from 'drizzle-orm';
 import { getDb } from '@gcfis/db/client';
 import {
+  agents,
+  businessCreditLedger,
   conversations,
   firecrawlJobs,
   knowledgeDocuments,
@@ -37,6 +39,222 @@ function scopedMessageRole(
 ) {
   const base = and(eq(conversations.businessId, businessId), eq(messages.role, role));
   return agentId ? and(eq(conversations.businessId, businessId), eq(conversations.agentId, agentId), eq(messages.role, role)) : base;
+}
+
+type TrendBucket = {
+  date: string;
+  conversations: number;
+  userMessages: number;
+  assistantMessages: number;
+  memoryFacts: number;
+  crawlJobs: number;
+  creditsUsed: number;
+  firecrawlQueued: number;
+  firecrawlRunning: number;
+  firecrawlDone: number;
+  firecrawlError: number;
+  modelUsage: Record<string, number>;
+};
+
+type MessageMetadata = {
+  llmProvider?: string;
+  llmModel?: string;
+};
+
+type TrendRows = {
+  conversationRows: Array<{ createdAt: Date }>;
+  memoryRows: Array<{ createdAt: Date }>;
+  crawlRows: Array<{ createdAt: Date; status: string }>;
+  creditRows: Array<{ createdAt: Date; amount: number; metadata: unknown }>;
+  messageRows: Array<{
+    createdAt: Date;
+    role: string;
+    metadata: unknown;
+    fallbackProvider: string | null;
+    fallbackModel: string | null;
+  }>;
+};
+
+function createTrendBuckets(startDate: Date, days: number): Map<string, TrendBucket> {
+  const buckets = new Map<string, TrendBucket>();
+  for (let i = 0; i < days; i += 1) {
+    const current = new Date(startDate);
+    current.setDate(startDate.getDate() + i);
+    const key = current.toISOString().slice(0, 10);
+    buckets.set(key, {
+      date: key,
+      conversations: 0,
+      userMessages: 0,
+      assistantMessages: 0,
+      memoryFacts: 0,
+      crawlJobs: 0,
+        creditsUsed: 0,
+        firecrawlQueued: 0,
+        firecrawlRunning: 0,
+        firecrawlDone: 0,
+        firecrawlError: 0,
+        modelUsage: {},
+    });
+  }
+  return buckets;
+}
+
+function incrementTrendBucket(
+  buckets: Map<string, TrendBucket>,
+  timestamp: Date,
+  metric: 'conversations' | 'memoryFacts' | 'crawlJobs',
+) {
+  const key = timestamp.toISOString().slice(0, 10);
+  const bucket = buckets.get(key);
+  if (bucket) {
+    bucket[metric] += 1;
+  }
+}
+
+function incrementMessageBucket(
+  buckets: Map<string, TrendBucket>,
+  timestamp: Date,
+  role: string,
+) {
+  const key = timestamp.toISOString().slice(0, 10);
+  const bucket = buckets.get(key);
+  if (!bucket) return;
+  if (role === 'user') bucket.userMessages += 1;
+  if (role === 'assistant') bucket.assistantMessages += 1;
+}
+
+function incrementCreditBucket(
+  buckets: Map<string, TrendBucket>,
+  timestamp: Date,
+  amount: number,
+) {
+  const key = timestamp.toISOString().slice(0, 10);
+  const bucket = buckets.get(key);
+  if (bucket) {
+    bucket.creditsUsed += Math.abs(amount);
+  }
+}
+
+function incrementFirecrawlBucket(
+  buckets: Map<string, TrendBucket>,
+  timestamp: Date,
+  status: string,
+) {
+  const key = timestamp.toISOString().slice(0, 10);
+  const bucket = buckets.get(key);
+  if (!bucket) return;
+  bucket.crawlJobs += 1;
+  if (status === 'queued') bucket.firecrawlQueued += 1;
+  if (status === 'running') bucket.firecrawlRunning += 1;
+  if (status === 'done') bucket.firecrawlDone += 1;
+  if (status === 'error') bucket.firecrawlError += 1;
+}
+
+function incrementModelUsageBucket(
+  buckets: Map<string, TrendBucket>,
+  timestamp: Date,
+  metadata: unknown,
+  fallbackProvider?: string | null,
+  fallbackModel?: string | null,
+) {
+  const key = timestamp.toISOString().slice(0, 10);
+  const bucket = buckets.get(key);
+  if (!bucket) return;
+
+  const modelMetadata = metadata && typeof metadata === 'object' ? (metadata as MessageMetadata) : {};
+  const provider = modelMetadata.llmProvider?.trim() || fallbackProvider?.trim() || 'unknown';
+  const model = modelMetadata.llmModel?.trim() || fallbackModel?.trim() || 'unknown';
+  const modelKey = `${provider}/${model}`;
+
+  bucket.modelUsage[modelKey] = (bucket.modelUsage[modelKey] ?? 0) + 1;
+}
+
+function applyTrendRows(buckets: Map<string, TrendBucket>, rows: TrendRows, agentId?: string) {
+  for (const row of rows.conversationRows) incrementTrendBucket(buckets, row.createdAt, 'conversations');
+  for (const row of rows.memoryRows) incrementTrendBucket(buckets, row.createdAt, 'memoryFacts');
+  for (const row of rows.crawlRows) incrementFirecrawlBucket(buckets, row.createdAt, row.status);
+  for (const row of rows.creditRows) {
+    const rowMetadata = row.metadata && typeof row.metadata === 'object' ? (row.metadata as Record<string, unknown>) : {};
+    if (agentId && rowMetadata['agentId'] !== agentId) continue;
+    if (row.amount < 0) incrementCreditBucket(buckets, row.createdAt, row.amount);
+  }
+  for (const row of rows.messageRows) {
+    incrementMessageBucket(buckets, row.createdAt, row.role);
+    if (row.role === 'assistant') {
+      incrementModelUsageBucket(
+        buckets,
+        row.createdAt,
+        row.metadata,
+        row.fallbackProvider,
+        row.fallbackModel,
+      );
+    }
+  }
+}
+
+async function loadTrendRows(
+  agentId: string | undefined,
+  authBusinessId: string,
+  startDate: Date,
+) {
+  const conversationWhere = agentId
+    ? and(
+        eq(conversations.businessId, authBusinessId),
+        eq(conversations.agentId, agentId),
+        gte(conversations.createdAt, startDate),
+      )
+    : and(eq(conversations.businessId, authBusinessId), gte(conversations.createdAt, startDate));
+
+  const memoryWhere = agentId
+    ? and(
+        eq(memoryFacts.businessId, authBusinessId),
+        eq(memoryFacts.agentId, agentId),
+        gte(memoryFacts.createdAt, startDate),
+      )
+    : and(eq(memoryFacts.businessId, authBusinessId), gte(memoryFacts.createdAt, startDate));
+
+  const crawlWhere = agentId
+    ? and(
+        eq(firecrawlJobs.businessId, authBusinessId),
+        eq(firecrawlJobs.agentId, agentId),
+        gte(firecrawlJobs.createdAt, startDate),
+      )
+    : and(eq(firecrawlJobs.businessId, authBusinessId), gte(firecrawlJobs.createdAt, startDate));
+
+  const messageWhere = agentId
+    ? and(
+        eq(conversations.businessId, authBusinessId),
+        eq(conversations.agentId, agentId),
+        gte(messages.createdAt, startDate),
+      )
+    : and(eq(conversations.businessId, authBusinessId), gte(messages.createdAt, startDate));
+
+  const creditWhere = and(
+    eq(businessCreditLedger.businessId, authBusinessId),
+    gte(businessCreditLedger.createdAt, startDate),
+  );
+
+  const db = getDb();
+  const [conversationRows, memoryRows, crawlRows, creditRows, messageRows] = await Promise.all([
+    db.select({ createdAt: conversations.createdAt }).from(conversations).where(conversationWhere),
+    db.select({ createdAt: memoryFacts.createdAt }).from(memoryFacts).where(memoryWhere),
+    db.select({ createdAt: firecrawlJobs.createdAt, status: firecrawlJobs.status }).from(firecrawlJobs).where(crawlWhere),
+    db.select({ createdAt: businessCreditLedger.createdAt, amount: businessCreditLedger.amount, metadata: businessCreditLedger.metadata }).from(businessCreditLedger).where(creditWhere),
+    db
+      .select({
+        createdAt: messages.createdAt,
+        role: messages.role,
+        metadata: messages.metadata,
+        fallbackProvider: agents.llmProvider,
+        fallbackModel: agents.llmModel,
+      })
+      .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .leftJoin(agents, eq(conversations.agentId, agents.id))
+      .where(messageWhere),
+  ]);
+
+  return { conversationRows, memoryRows, crawlRows, creditRows, messageRows } satisfies TrendRows;
 }
 
 export class DashboardController {
@@ -224,6 +442,42 @@ export class DashboardController {
             },
           },
         },
+      },
+    });
+  };
+
+  public readonly getTrends = async (req: Request, res: Response) => {
+    const auth = await requireBusinessAuth(req, res, 'viewer');
+    if (!auth) return;
+
+    const agentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined;
+    const daysParam = Number(req.query['days'] ?? '14');
+    const days = Number.isFinite(daysParam) ? Math.min(Math.max(Math.floor(daysParam), 7), 90) : 14;
+
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - (days - 1));
+    const bucketMap = createTrendBuckets(startDate, days);
+
+    const rows = await loadTrendRows(agentId, auth.businessId, startDate);
+    applyTrendRows(bucketMap, rows, agentId);
+
+    const points = Array.from(bucketMap.values());
+
+    return res.json({
+      ok: true,
+      data: {
+        scope: {
+          businessId: auth.businessId,
+          ...(agentId ? { agentId } : {}),
+        },
+        range: {
+          days,
+          startDate: startDate.toISOString(),
+          endDate: now.toISOString(),
+        },
+        points,
       },
     });
   };

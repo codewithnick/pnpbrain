@@ -1,12 +1,12 @@
 <?php
 /**
- * Plugin Name:       GCFIS Widget
+ * Plugin Name:       PNpbrain Widget
  * Plugin URI:        https://gcfis.io
- * Description:       Embed the GCFIS AI chat widget on your WordPress site. Configure once, chat everywhere.
+ * Description:       Embed the PNpbrain AI chat widget on your WordPress site. Configure once, chat everywhere.
  * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
- * Author:            GCFIS
+ * Author:            PNpbrain
  * Author URI:        https://gcfis.io
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
@@ -107,8 +107,8 @@ function gcfis_sanitize_settings( mixed $raw ): array {
 
 function gcfis_add_settings_page(): void {
     add_options_page(
-        __( 'GCFIS Widget Settings', 'gcfis-widget' ),
-        __( 'GCFIS Widget', 'gcfis-widget' ),
+        __( 'PNpbrain Widget Settings', 'gcfis-widget' ),
+        __( 'PNpbrain Widget', 'gcfis-widget' ),
         'manage_options',
         'gcfis-widget',
         'gcfis_render_settings_page'
@@ -181,11 +181,25 @@ function gcfis_enqueue_widget_script(): void {
      * @param array $config Associative array of widget options.
      */
     $config = apply_filters( 'gcfis_widget_config', [
-        'backendUrl'     => esc_url_raw( $opts['backend_url'] ),
-        'publicToken'    => sanitize_text_field( $opts['public_token'] ),
-        'primaryColor'   => $opts['primary_color']   ?? '#6366f1',
-        'botName'        => $opts['bot_name']         ?? 'Assistant',
-        'welcomeMessage' => $opts['welcome_message']  ?? 'Hi! How can I help you today?',
+        'backendUrl'           => esc_url_raw( $opts['backend_url'] ),
+        'publicToken'          => sanitize_text_field( $opts['public_token'] ),
+        'primaryColor'         => $opts['primary_color']   ?? '#6366f1',
+        'botName'              => $opts['bot_name']         ?? 'Assistant',
+        'welcomeMessage'       => $opts['welcome_message']  ?? 'Hi! How can I help you today?',
+        'placeholder'          => $opts['placeholder']      ?? 'Type a message…',
+        'assistantAvatarMode'   => $opts['assistant_avatar_mode']   ?? 'initial',
+        'assistantAvatarText'   => $opts['assistant_avatar_text']   ?? 'A',
+        'assistantAvatarImageUrl' => $opts['assistant_avatar_image_url'] ?? '',
+        'showAssistantAvatar'   => isset( $opts['show_assistant_avatar'] ) ? (bool) $opts['show_assistant_avatar'] : true,
+        'showUserAvatar'        => ! empty( $opts['show_user_avatar'] ),
+        'userAvatarText'        => $opts['user_avatar_text'] ?? 'You',
+        'position'              => $opts['position'] ?? 'bottom-right',
+        'headerSubtitle'        => $opts['header_subtitle'] ?? 'Online',
+        'chatBackgroundColor'   => $opts['chat_background_color'] ?? '#f9fafb',
+        'userMessageColor'      => $opts['user_message_color'] ?? '',
+        'assistantMessageColor'  => $opts['assistant_message_color'] ?? '#ffffff',
+        'borderRadiusPx'        => isset( $opts['border_radius_px'] ) ? (int) $opts['border_radius_px'] : 16,
+        'showPoweredBy'         => isset( $opts['show_powered_by'] ) ? (bool) $opts['show_powered_by'] : true,
     ] );
 
     // wp_localize_script JSON-encodes and escapes the data.
@@ -209,11 +223,25 @@ function gcfis_filter_script_tag( string $tag, string $handle, string $src ): st
 
     $opts = (array) get_option( GCFIS_WIDGET_OPTION, [] );
     $attrs = [
-        'data-public-token'    => esc_attr( $opts['public_token'] ?? '' ),
-        'data-backend-url'     => esc_url( $opts['backend_url'] ?? '' ),
-        'data-primary-color'   => esc_attr( $opts['primary_color'] ?? '#6366f1' ),
-        'data-bot-name'        => esc_attr( $opts['bot_name'] ?? 'Assistant' ),
-        'data-welcome-message' => esc_attr( $opts['welcome_message'] ?? 'Hi! How can I help you today?' ),
+        'data-public-token'           => esc_attr( $opts['public_token'] ?? '' ),
+        'data-backend-url'            => esc_url( $opts['backend_url'] ?? '' ),
+        'data-primary-color'          => esc_attr( $opts['primary_color'] ?? '#6366f1' ),
+        'data-bot-name'               => esc_attr( $opts['bot_name'] ?? 'Assistant' ),
+        'data-welcome-message'        => esc_attr( $opts['welcome_message'] ?? 'Hi! How can I help you today?' ),
+        'data-placeholder'            => esc_attr( $opts['placeholder'] ?? 'Type a message…' ),
+        'data-assistant-avatar-mode'   => esc_attr( $opts['assistant_avatar_mode'] ?? 'initial' ),
+        'data-assistant-avatar-text'   => esc_attr( $opts['assistant_avatar_text'] ?? 'A' ),
+        'data-assistant-avatar-image-url' => esc_url( $opts['assistant_avatar_image_url'] ?? '' ),
+        'data-show-assistant-avatar'   => ! empty( $opts['show_assistant_avatar'] ) ? 'true' : 'false',
+        'data-show-user-avatar'        => ! empty( $opts['show_user_avatar'] ) ? 'true' : 'false',
+        'data-user-avatar-text'        => esc_attr( $opts['user_avatar_text'] ?? 'You' ),
+        'data-position'                => esc_attr( $opts['position'] ?? 'bottom-right' ),
+        'data-header-subtitle'         => esc_attr( $opts['header_subtitle'] ?? 'Online' ),
+        'data-chat-background-color'   => esc_attr( $opts['chat_background_color'] ?? '#f9fafb' ),
+        'data-user-message-color'      => esc_attr( $opts['user_message_color'] ?? '' ),
+        'data-assistant-message-color'  => esc_attr( $opts['assistant_message_color'] ?? '#ffffff' ),
+        'data-border-radius-px'        => esc_attr( isset( $opts['border_radius_px'] ) ? (string) $opts['border_radius_px'] : '16' ),
+        'data-show-powered-by'         => ! empty( $opts['show_powered_by'] ) ? 'true' : 'false',
     ];
 
     $attr_string = '';
@@ -262,7 +290,11 @@ add_action( 'wp_enqueue_scripts', 'gcfis_maybe_auto_inject' );
  * a plain mount-point div. The JS bundle handles rendering into it.
  *
  * Accepted attributes mirror the JS WidgetConfig interface:
- *   public_token, backend_url, primary_color, bot_name, welcome_message
+ *   public_token, backend_url, primary_color, bot_name, welcome_message,
+ *   placeholder, assistant_avatar_mode, assistant_avatar_text,
+ *   assistant_avatar_image_url, show_assistant_avatar, show_user_avatar,
+ *   user_avatar_text, position, header_subtitle, chat_background_color,
+ *   user_message_color, assistant_message_color, border_radius_px, show_powered_by
  *
  * Shortcode-level attributes override Settings values.
  *
@@ -274,11 +306,25 @@ function gcfis_widget_shortcode( array|string $atts ): string {
 
     $atts = shortcode_atts(
         [
-            'public_token'    => $opts['public_token']    ?? '',
-            'backend_url'     => $opts['backend_url']     ?? '',
-            'primary_color'   => $opts['primary_color']   ?? '#6366f1',
-            'bot_name'        => $opts['bot_name']         ?? 'Assistant',
-            'welcome_message' => $opts['welcome_message']  ?? 'Hi! How can I help you today?',
+            'public_token'          => $opts['public_token']          ?? '',
+            'backend_url'           => $opts['backend_url']           ?? '',
+            'primary_color'         => $opts['primary_color']         ?? '#6366f1',
+            'bot_name'              => $opts['bot_name']              ?? 'Assistant',
+            'welcome_message'       => $opts['welcome_message']       ?? 'Hi! How can I help you today?',
+            'placeholder'           => $opts['placeholder']           ?? 'Type a message…',
+            'assistant_avatar_mode'  => $opts['assistant_avatar_mode']  ?? 'initial',
+            'assistant_avatar_text'  => $opts['assistant_avatar_text']  ?? 'A',
+            'assistant_avatar_image_url' => $opts['assistant_avatar_image_url'] ?? '',
+            'show_assistant_avatar'  => isset( $opts['show_assistant_avatar'] ) ? (string) $opts['show_assistant_avatar'] : '1',
+            'show_user_avatar'       => ! empty( $opts['show_user_avatar'] ) ? '1' : '0',
+            'user_avatar_text'       => $opts['user_avatar_text']       ?? 'You',
+            'position'               => $opts['position']               ?? 'bottom-right',
+            'header_subtitle'        => $opts['header_subtitle']        ?? 'Online',
+            'chat_background_color'  => $opts['chat_background_color']  ?? '#f9fafb',
+            'user_message_color'     => $opts['user_message_color']     ?? '',
+            'assistant_message_color'=> $opts['assistant_message_color'] ?? '#ffffff',
+            'border_radius_px'       => isset( $opts['border_radius_px'] ) ? (string) $opts['border_radius_px'] : '16',
+            'show_powered_by'        => ! empty( $opts['show_powered_by'] ) ? '1' : '0',
         ],
         $atts,
         'gcfis_widget'
@@ -287,7 +333,7 @@ function gcfis_widget_shortcode( array|string $atts ): string {
     if ( empty( $atts['public_token'] ) || empty( $atts['backend_url'] ) ) {
         if ( current_user_can( 'manage_options' ) ) {
             return '<p style="color:red;">'
-                . esc_html__( 'GCFIS Widget: Please configure Backend URL and Public Token in Settings → GCFIS Widget.', 'gcfis-widget' )
+                . esc_html__( 'PNpbrain Widget: Please configure Backend URL and Public Token in Settings → PNpbrain Widget.', 'gcfis-widget' )
                 . '</p>';
         }
         return '';
@@ -307,14 +353,42 @@ function gcfis_widget_shortcode( array|string $atts ): string {
         . 'data-backend-url="%s" '
         . 'data-primary-color="%s" '
         . 'data-bot-name="%s" '
-        . 'data-welcome-message="%s">'
+        . 'data-welcome-message="%s" '
+        . 'data-placeholder="%s" '
+        . 'data-assistant-avatar-mode="%s" '
+        . 'data-assistant-avatar-text="%s" '
+        . 'data-assistant-avatar-image-url="%s" '
+        . 'data-show-assistant-avatar="%s" '
+        . 'data-show-user-avatar="%s" '
+        . 'data-user-avatar-text="%s" '
+        . 'data-position="%s" '
+        . 'data-header-subtitle="%s" '
+        . 'data-chat-background-color="%s" '
+        . 'data-user-message-color="%s" '
+        . 'data-assistant-message-color="%s" '
+        . 'data-border-radius-px="%s" '
+        . 'data-show-powered-by="%s">'
         . '</div>',
         esc_attr( $mount_id ),
         esc_attr( $atts['public_token'] ),
         esc_url( $atts['backend_url'] ),
         esc_attr( $atts['primary_color'] ),
         esc_attr( $atts['bot_name'] ),
-        esc_attr( $atts['welcome_message'] )
+        esc_attr( $atts['welcome_message'] ),
+        esc_attr( $atts['placeholder'] ),
+        esc_attr( $atts['assistant_avatar_mode'] ),
+        esc_attr( $atts['assistant_avatar_text'] ),
+        esc_url( $atts['assistant_avatar_image_url'] ),
+        esc_attr( $atts['show_assistant_avatar'] ),
+        esc_attr( $atts['show_user_avatar'] ),
+        esc_attr( $atts['user_avatar_text'] ),
+        esc_attr( $atts['position'] ),
+        esc_attr( $atts['header_subtitle'] ),
+        esc_attr( $atts['chat_background_color'] ),
+        esc_attr( $atts['user_message_color'] ),
+        esc_attr( $atts['assistant_message_color'] ),
+        esc_attr( $atts['border_radius_px'] ),
+        esc_attr( $atts['show_powered_by'] )
     );
 }
 add_shortcode( 'gcfis_widget', 'gcfis_widget_shortcode' );

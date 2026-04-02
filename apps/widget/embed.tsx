@@ -10,7 +10,18 @@
  *     data-backend-url="https://api.pnpbrain.com"
  *     data-bot-name="My Assistant"
  *     data-primary-color="#6366f1"
+ *     data-assistant-avatar-mode="emoji"
+ *     data-assistant-avatar-text="AI"
+ *     data-show-user-avatar="true"
+ *     data-position="bottom-left"
+ *     data-header-subtitle="Support Team"
  *     data-welcome-message="Hi! How can I help?"
+ *     data-placeholder="Type a message…"
+ *     data-chat-background-color="#f9fafb"
+ *     data-user-message-color="#6366f1"
+ *     data-assistant-message-color="#ffffff"
+ *     data-border-radius-px="16"
+ *     data-show-powered-by="true"
  *   ></script>
  *
  * The script mounts a shadow-DOM React root so PNPBrain styles never conflict
@@ -33,19 +44,76 @@ function buildConfigFromDataset(
   dataset: DOMStringMap,
   fallback: Partial<WidgetConfig>
 ): WidgetConfig {
+  const parseBoolean = (value: string | undefined, fallbackValue: boolean): boolean => {
+    if (value === undefined) return fallbackValue;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === '1' || normalized === 'true' || normalized === 'yes') return true;
+    if (normalized === '0' || normalized === 'false' || normalized === 'no') return false;
+    return fallbackValue;
+  };
+
+  const parseNumber = (value: string | undefined, fallbackValue: number): number => {
+    if (value === undefined) return fallbackValue;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallbackValue;
+  };
+
+  const parsePosition = (
+    value: string | undefined,
+    fallbackValue: NonNullable<WidgetConfig['position']>
+  ): NonNullable<WidgetConfig['position']> => {
+    if (value === 'bottom-left' || value === 'bottom-right') return value;
+    return fallbackValue;
+  };
+
+  const parseAvatarMode = (
+    value: string | undefined,
+    fallbackValue: NonNullable<WidgetConfig['assistantAvatarMode']>
+  ): NonNullable<WidgetConfig['assistantAvatarMode']> => {
+    if (value === 'initial' || value === 'emoji' || value === 'image') return value;
+    return fallbackValue;
+  };
+
   const publicToken = dataset['publicToken'] ?? fallback.publicToken;
   if (!publicToken) {
     throw new Error('[PNPBrain] data-public-token attribute is required. Widget not mounted.');
   }
 
+  const assistantAvatarImageUrl =
+    dataset['assistantAvatarImageUrl'] ?? fallback.assistantAvatarImageUrl;
+
   return {
     publicToken,
+    ...((dataset['agentId'] ?? fallback.agentId)
+      ? { agentId: dataset['agentId'] ?? fallback.agentId }
+      : {}),
     backendUrl: dataset['backendUrl'] ?? fallback.backendUrl ?? 'https://api.pnpbrain.com',
     botName: dataset['botName'] ?? fallback.botName ?? 'Assistant',
     primaryColor: dataset['primaryColor'] ?? fallback.primaryColor ?? '#6366f1',
     welcomeMessage:
       dataset['welcomeMessage'] ?? fallback.welcomeMessage ?? 'Hi! How can I help you today?',
     placeholder: dataset['placeholder'] ?? fallback.placeholder ?? 'Type a message…',
+    assistantAvatarMode: parseAvatarMode(
+      dataset['assistantAvatarMode'],
+      fallback.assistantAvatarMode ?? 'initial'
+    ),
+    assistantAvatarText:
+      dataset['assistantAvatarText'] ?? fallback.assistantAvatarText ?? (dataset['botName'] ?? fallback.botName ?? 'Assistant').charAt(0),
+    ...(assistantAvatarImageUrl ? { assistantAvatarImageUrl } : {}),
+    showAssistantAvatar: parseBoolean(
+      dataset['showAssistantAvatar'],
+      fallback.showAssistantAvatar ?? true
+    ),
+    showUserAvatar: parseBoolean(dataset['showUserAvatar'], fallback.showUserAvatar ?? false),
+    userAvatarText: dataset['userAvatarText'] ?? fallback.userAvatarText ?? 'You',
+    position: parsePosition(dataset['position'], fallback.position ?? 'bottom-right'),
+    headerSubtitle: dataset['headerSubtitle'] ?? fallback.headerSubtitle ?? 'Online',
+    chatBackgroundColor: dataset['chatBackgroundColor'] ?? fallback.chatBackgroundColor ?? '#f9fafb',
+    userMessageColor: dataset['userMessageColor'] ?? fallback.userMessageColor ?? '#6366f1',
+    assistantMessageColor:
+      dataset['assistantMessageColor'] ?? fallback.assistantMessageColor ?? '#ffffff',
+    borderRadiusPx: parseNumber(dataset['borderRadiusPx'], fallback.borderRadiusPx ?? 16),
+    showPoweredBy: parseBoolean(dataset['showPoweredBy'], fallback.showPoweredBy ?? true),
   };
 }
 

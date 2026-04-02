@@ -6,5 +6,6 @@ const controller = new DashboardController();
 
 router.get('/stats', controller.getStats);
 router.get('/usage', controller.getUsage);
+router.get('/trends', controller.getTrends);
 
 export default router;

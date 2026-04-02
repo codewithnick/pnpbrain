@@ -37,4 +37,4 @@ await esbuild.build({
   },
 });
 
-console.log('✅ GCFIS widget embed bundle built to dist/gcfis-widget.js');
+console.log('✅ PNpbrain widget embed bundle built to dist/gcfis-widget.js');

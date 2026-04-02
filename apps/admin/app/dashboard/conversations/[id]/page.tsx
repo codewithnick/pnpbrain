@@ -6,6 +6,132 @@ import { useEffect, useState } from 'react';
 import type { AgentMemoryFactItem, ConversationDetail, MemoryFactItem } from '@/lib/api-types';
 import { fetchBackend } from '@/lib/supabase';
 
+type TimelineTone = 'conversation' | 'user' | 'assistant' | 'system' | 'tool';
+
+type ConversationTimelineEntry = {
+  id: string;
+  title: string;
+  detail: string;
+  timestamp: string;
+  tone: TimelineTone;
+};
+
+function formatDuration(ms: number | null | undefined) {
+  if (ms === null || ms === undefined) return 'n/a';
+  if (ms < 1000) return `${ms} ms`;
+
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes === 0) return `${seconds}s`;
+  if (seconds === 0) return `${minutes}m`;
+  return `${minutes}m ${seconds}s`;
+}
+
+function buildTimeline(conversation: ConversationDetail) {
+  const orderedMessages = [...conversation.messages].sort(
+    (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
+
+  const assistantResponseTimes = orderedMessages
+    .filter(
+      (message) =>
+        message.role === 'assistant' &&
+        message.responseTimeMs !== null &&
+        message.responseTimeMs !== undefined,
+    )
+    .map((message) => message.responseTimeMs ?? 0);
+
+  const entries: ConversationTimelineEntry[] = [
+    {
+      id: `${conversation.id}-opened`,
+      title: 'Conversation opened',
+      detail: `Session ${conversation.sessionId.slice(0, 8)} started`,
+      timestamp: conversation.createdAt,
+      tone: 'conversation',
+    },
+  ];
+
+  orderedMessages.forEach((message, index) => {
+    const currentTime = new Date(message.createdAt).getTime();
+    const previousTime =
+      index === 0
+        ? new Date(conversation.createdAt).getTime()
+        : new Date(orderedMessages[index - 1]!.createdAt).getTime();
+    const gapMs = Math.max(0, currentTime - previousTime);
+    const preview = message.content.length > 110 ? `${message.content.slice(0, 110)}...` : message.content;
+    const detailParts = [preview];
+
+    if (gapMs > 0) {
+      detailParts.push(`${formatDuration(gapMs)} since previous event`);
+    }
+
+    if (message.role === 'assistant' && message.responseTimeMs !== null && message.responseTimeMs !== undefined) {
+      detailParts.push(`Response time ${formatDuration(message.responseTimeMs)}`);
+    }
+
+    let title: string;
+    if (message.role === 'assistant') {
+      title = 'Assistant reply';
+    } else if (message.role === 'tool') {
+      title = 'Tool activity';
+    } else if (message.role === 'system') {
+      title = 'System event';
+    } else {
+      title = 'Customer message';
+    }
+
+    entries.push({
+      id: message.id,
+      title,
+      detail: detailParts.join(' • '),
+      timestamp: message.createdAt,
+      tone: message.role,
+    });
+  });
+
+  const firstUserMessage = orderedMessages.find((message) => message.role === 'user');
+  const firstAssistantMessage = firstUserMessage
+    ? orderedMessages.find(
+        (message) =>
+          message.role === 'assistant' &&
+          new Date(message.createdAt).getTime() >= new Date(firstUserMessage.createdAt).getTime(),
+      )
+    : orderedMessages.find((message) => message.role === 'assistant');
+
+  return {
+    entries,
+    metrics: {
+      conversationDurationMs:
+        orderedMessages.length > 0
+          ? Math.max(
+              0,
+              new Date(orderedMessages.at(-1)!.createdAt).getTime() -
+                new Date(conversation.createdAt).getTime(),
+            )
+          : null,
+      firstResponseMs:
+        firstUserMessage && firstAssistantMessage
+          ? Math.max(
+              0,
+              new Date(firstAssistantMessage.createdAt).getTime() -
+                new Date(firstUserMessage.createdAt).getTime(),
+            )
+          : null,
+      averageAssistantResponseMs:
+        assistantResponseTimes.length > 0
+          ? Math.round(
+              assistantResponseTimes.reduce((total, value) => total + value, 0) /
+                assistantResponseTimes.length,
+            )
+          : null,
+      assistantCount: orderedMessages.filter((message) => message.role === 'assistant').length,
+      userCount: orderedMessages.filter((message) => message.role === 'user').length,
+    },
+  };
+}
+
 export default function ConversationDetailPage() {
   const params = useParams<{ id: string }>();
   const conversationId = typeof params.id === 'string' ? params.id : '';
@@ -119,6 +245,8 @@ export default function ConversationDetailPage() {
       </div>
     );
   } else if (conversation) {
+    const timeline = buildTimeline(conversation);
+
     let memoryContent: React.ReactNode;
     let agentMemoryContent: React.ReactNode;
 
@@ -236,6 +364,11 @@ export default function ConversationDetailPage() {
                       {message.role}
                     </div>
                     <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                    {message.role === 'assistant' && message.responseTimeMs !== undefined && message.responseTimeMs !== null && (
+                      <p className="mt-2 text-[11px] font-medium opacity-70">
+                        Response time: {message.responseTimeMs} ms
+                      </p>
+                    )}
                   </div>
                 </div>
               );
@@ -255,6 +388,72 @@ export default function ConversationDetailPage() {
               <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
                 {memoryFacts.length + agentMemoryFacts.length} facts
               </span>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-gray-200 bg-gradient-to-br from-slate-50 to-white p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Timeline tracking</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Follow the conversation from first contact to the last reply, including response latency.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 sm:min-w-72">
+                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400">Span</div>
+                    <div className="mt-1 font-semibold text-gray-900">{formatDuration(timeline.metrics.conversationDurationMs)}</div>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400">First reply</div>
+                    <div className="mt-1 font-semibold text-gray-900">{formatDuration(timeline.metrics.firstResponseMs)}</div>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400">Avg assistant</div>
+                    <div className="mt-1 font-semibold text-gray-900">
+                      {formatDuration(timeline.metrics.averageAssistantResponseMs)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400">Turns</div>
+                    <div className="mt-1 font-semibold text-gray-900">
+                      {timeline.metrics.userCount} / {timeline.metrics.assistantCount}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                {timeline.entries.map((entry, index) => {
+                  const toneStyles: Record<TimelineTone, string> = {
+                    conversation: 'bg-slate-400',
+                    user: 'bg-brand-500',
+                    assistant: 'bg-emerald-500',
+                    system: 'bg-amber-500',
+                    tool: 'bg-violet-500',
+                  };
+
+                  return (
+                    <div key={entry.id} className="relative flex gap-3">
+                      <div className="relative flex flex-col items-center">
+                        <span className={`mt-1 h-3 w-3 rounded-full ${toneStyles[entry.tone]}`} />
+                        {index < timeline.entries.length - 1 && (
+                          <span className="mt-2 h-full w-px grow bg-gray-200" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="text-sm font-semibold text-gray-900">{entry.title}</div>
+                          <div className="text-xs text-gray-400">{new Date(entry.timestamp).toLocaleString()}</div>
+                        </div>
+                        <p className="mt-1 text-sm leading-relaxed text-gray-600 whitespace-pre-wrap">
+                          {entry.detail}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {memoryError && (

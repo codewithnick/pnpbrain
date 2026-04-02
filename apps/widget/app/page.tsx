@@ -21,6 +21,17 @@ export default function WidgetPreviewPage() {
           primaryColor: '#6366f1',
           welcomeMessage: 'Hi! How can I help you today?',
           placeholder: 'Type a message…',
+          assistantAvatarMode: 'emoji',
+          assistantAvatarText: 'AI',
+          showAssistantAvatar: true,
+          showUserAvatar: true,
+          userAvatarText: 'ME',
+          position: 'bottom-right',
+          headerSubtitle: 'Support • Sales • Ops',
+          chatBackgroundColor: '#f5f7ff',
+          assistantMessageColor: '#ffffff',
+          borderRadiusPx: 20,
+          showPoweredBy: true,
         }}
       />
     </div>

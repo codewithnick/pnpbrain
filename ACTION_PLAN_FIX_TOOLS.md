@@ -1,369 +1,282 @@
-# Action Plan: Enable Visible Tool-Calling in PNPBrain Agent
-
-**Issue**: Skills are enabled but not visually demonstrable because agent execution is failing  
-**Goal**: Get the agent actually using tools so we can see them in action  
-**Timeline**: 30-60 minutes to fix
-
----
-
-## The Problem (Clear Diagnosis)
-
-### What's Happening
-```
-User sends message via MCP chat → "Unsupported state or unable to authenticate data"
-                                    ↓
-                        Agent never executes
-                                    ↓
-                    Tools never get called
-                                    ↓
-                    No visible tool usage
-```
-
-### Root Cause
-The MCP agent interface has an authentication or state issue that prevents:
-1. Agent initialization
-2. Graph execution
-3. Tool invocation
-4. Response generation
-
----
-
-## Solution A: Fix MCP Chat (Recommended)
-
-### Step 1: Debug the MCP Error
-
-**File**: `apps/backend/src/mcp/server.ts`  
-**Location**: The `chat` tool (around line 186)
-
-Add logging to see where the error occurs:
-
-```typescript
-async ({ message, threadId }) => {
-  console.log('[MCP/chat] Starting - user message:', message.substring(0, 50) + '...');
-  
-  try {
-    // Resolve or create conversation
-    let conversationId: string;
-    
-    console.log('[MCP/chat] Resolving conversation...');
-    
-    if (threadId) {
-      console.log('[MCP/chat] Using existing thread:', threadId);
-      const [existing] = await db.select(...).from(...);
-      if (!existing) {
-        console.log('[MCP/chat] Thread not found:', threadId);
-        return { ... };
-      }
-      conversationId = existing.id;
-    } else {
-      console.log('[MCP/chat] Creating new conversation...');
-      const [newConversation] = await db.insert(...).returning(...);
-      conversationId = newConversation!.id;
-    }
-    
-    console.log('[MCP/chat] Conversation ID:', conversationId);
-    console.log('[MCP/chat] Persisting user message...');
-    
-    // Persist user message
-    await db.insert(messages).values({...});
-    
-    console.log('[MCP/chat] Getting enabled skills...');
-    const [enabledSkills, ...] = await Promise.all([...]);
-    console.log('[MCP/chat] Enabled skills:', enabledSkills);
-    
-    console.log('[MCP/chat] Building graph input...');
-    const graphInput = {...};
-    
-    console.log('[MCP/chat] Running graph...');
-    const graphStream = runGraph(graphInput);
-    
-    let fullResponse = '';
-    for await (const event of graphStream) {
-      if (event.event === 'on_chat_model_stream') {
-        const token = event.data?.chunk?.content as string;
-        if (token) fullResponse += token;
-      }
-      // IMPORTANT: Log tool calls
-      if (event.event === 'on_tool_call') {
-        console.log('[MCP/chat] 🔧 TOOL CALLED:', {
-          tool: event.data.tool,
-          input: event.data.input,
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-    
-    console.log('[MCP/chat] Response generated, persisting...');
-    fullResponse = sanitizeAssistantReply(fullResponse);
-    
-    await db.insert(messages).values({...});
-    
-    console.log('[MCP/chat] ✅ Success');
-    
-    return {
-      content: [{type: 'text', text: fullResponse}],
-      _meta: {threadId: conversationId}
-    };
-    
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[MCP/chat] ❌ ERROR:', {
-      message,
-      stack: err instanceof Error ? err.stack : undefined,
-      timestamp: new Date().toISOString()
-    });
-    return {
-      content: [{type: 'text', text: `Agent error: ${message}`}],
-      isError: true
-    };
-  }
-}
-```
-
-### Step 2: Check Backend Logs After Fix
-
-After adding the logging above:
-
-```bash
-# Terminal 1: Start backend with debug output
-cd /Users/nikhil/Desktop/GCFIS/apps/backend
-npm run dev  # Or however the backend is started
-
-# Terminal 2: Send test message
-curl -X POST http://localhost:3011/api/chat \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_API_KEY" \
-  -d '{"message": "Can you calculate 500 * 149 for me?"}'
-```
-
-Look for output like:
-```
-[MCP/chat] Starting - user message: Can you calculate 500 * 149 for me?
-[MCP/chat] Resolving conversation...
-[MCP/chat] Creating new conversation...
-[MCP/chat] Conversation ID: abc123def456
-[MCP/chat] Persisting user message...
-[MCP/chat] Getting enabled skills...
-[MCP/chat] Enabled skills: ['calculator', 'datetime', 'firecrawl', ...]
-[MCP/chat] Building graph input...
-[MCP/chat] Running graph...
-[MCP/chat] 🔧 TOOL CALLED: {
-  tool: 'calculator',
-  input: { expression: '500 * 149' },
-  timestamp: '2026-04-01T14:55:30.123Z'
-}
-[MCP/chat] Response generated
-[MCP/chat] ✅ Success
-```
-
----
-
-## Solution B: Test Via Direct API (Quicker Verification)
-
-If the MCP chat tool continues failing, bypass it entirely:
-
-### Step 1: Use Backend Chat API Directly
-
-```bash
-# Test direct API endpoint instead of MCP
-curl -X POST http://localhost:3011/api/chat \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_KEY" \
-  -d '{
-    "message": "We have 500 employees and 5M in revenue. What would PNPBrain cost us annually if we do 1000 messages per month?"
-  }'
-```
-
-This tests the agent execution without the MCP layer that's currently failing.
-
-### Step 2: Check for Tool-Calling Evidence
-
-Look in the response for:
-- Numerical calculations (calculator was used)
-- Pricing recommendations
-- Business context understanding (lead qualification attempted)
-
----
-
-## Solution C: Enable Backend Tool Logging (Fastest Path)
-
-Modify `packages/agent/src/graph.ts` to log all tool invocations:
-
-```typescript
-export async function* runGraph(input: GraphInput) {
-  // ... existing code ...
-  
-  const stream = graph.streamEvents({ messages: promptMessages }, { version: 'v2' });
-  for await (const event of stream) {
-    // NEW: Log tool invocations
-    if (event.event === 'on_tool_start') {
-      console.log(`
-╔════════════════════════════════════════════════════════╗
-║ 🔧 TOOL INVOKED
-║ Name: ${event.data.tool ?? 'UNKNOWN'}
-║ Input: ${JSON.stringify(event.data.input ?? {})}
-╚════════════════════════════════════════════════════════╝
-      `);
-    }
-    
-    if (event.event === 'on_tool_end') {
-      console.log(`
-╔════════════════════════════════════════════════════════╗
-║ ✅ TOOL RESULT
-║ Tool: ${event.data.tool ?? 'UNKNOWN'}
-║ Output: ${typeof event.data.output === 'string' 
-  ? event.data.output.substring(0, 100) 
-  : JSON.stringify(event.data.output)}
-╚════════════════════════════════════════════════════════╝
-      `);
-    }
-    
-    yield event;
-  }
-}
-```
-
-Then start the backend and watch the logs while sending messages:
-
-```bash
-# Terminal 1: Start with logging visible
-pnpm dev
-# Watch for tool invocation logs
-
-# Terminal 2: Send a message that should trigger calculator
-curl -X POST http://localhost:3011/api/chat \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{"message": "What is 50 times 30?"}'
-```
-
-You'll see:
-```
-╔════════════════════════════════════════════════════════╗
-║ 🔧 TOOL INVOKED
-║ Name: calculator
-║ Input: {"expression":"50 * 30"}
-╚════════════════════════════════════════════════════════╝
-
-╔════════════════════════════════════════════════════════╗
-║ ✅ TOOL RESULT
-║ Tool: calculator
-║ Output: 50 * 30 = 1500
-╚════════════════════════════════════════════════════════╝
-```
-
----
-
-## Step-by-Step Verification
-
-### 1. Confirm Backend is Running
-
-```bash
-curl -s http://localhost:3011/mcp \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"ping"}'
-```
-
-Should return `{"error": "Missing x-api-key header"}` (not a network error).
-
-### 2. Verify Agent Exists
-
-```bash
-curl -s http://localhost:3011/mcp \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_KEY" \
-  -d '{"jsonrpc":"2.0","method":"tools/list"}'
-```
-
-Should list all available tools including our 6 skills.
-
-### 3. Test Basic Message (No Skills)
-
-```bash
-curl -s http://localhost:3011/api/chat \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_KEY" \
-  -d '{"message": "What is PNPBrain?"}'
-```
-
-Should return agent response about PNPBrain.
-
-### 4. Test Calculator Skill
-
-```bash
-curl -s http://localhost:3011/api/chat \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_KEY" \
-  -d '{"message": "Can you calculate 25 times 40 plus 100?"}'
-```
-
-Monitor logs for tool invocation.
-
-### 5. Test Lead Qualification Skill
-
-```bash
-curl -s http://localhost:3011/api/chat \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_KEY" \
-  -d '{"message": "We are a 200-person SaaS company with $10M ARR. We need 24/7 support automation urgently. Timeline is maximum 30 days."}'
-```
-
-Monitor for lead_qualification tool invocation.
-
----
-
-## Success Criteria
-
-You'll know tools are working when:
-
-✅ Backend logs show tool invocation with clear names  
-✅ Calculator tool returns math results  
-✅ Lead qualification scores leads (0-100)  
-✅ DateTime handles timezone conversions  
-✅ Firecrawl crawls URLs  
-✅ Meeting Scheduler opens Calendly  
-✅ Support Escalation creates Zendesk tickets  
-
----
-
-## Quick Decision Tree
-
-```
-Q: Do you want to fix MCP chat?
-├─→ YES: Follow Solution A (detailed)
-│
-└─→ NO: Use Solution C instead (logging-based)
-    └─→ Add tool-logging to graph.ts
-    └─→ Start backend with logs visible
-    └─→ Send test messages via direct API
-    └─→ Watch logs for tool invocation traces
-```
-
----
-
-## Summary
-
-**You correctly identified** that we can't see tools being used in practice.
-
-**The issue is** the agent execution is failing due to MCP interface problems.
-
-**The fix is** to enable tool logging and test via the direct backend API instead of through the broken MCP layer.
-
-**Within 30 minutes** you'll see clear evidence of tool-calling with detailed logging.
-
----
-
-## Files to modify:
-
-1. **apps/backend/src/mcp/server.ts** - Add console.log to `chat` tool
-2. **packages/agent/src/graph.ts** - Add tool event logging to `runGraph`
-
-## Next action:
-
-Pick Solution A, B, or C above and start with Step 1.
-
-Report back with the log output and we can verify tools are actually being invoked.
+# Action Plan: End-to-End Feature Verification and MCP Testing
+
+## Objective
+
+Verify every user-facing feature of the PNpbrain stack through the authenticated MCP API, identify real regressions, and fix any concrete bugs found in the runtime or prompt layer.
+
+## What Was Verified Already
+
+- The backend is reachable on `http://localhost:3011`.
+- `GET /api/health` returns `200 OK`.
+- The MCP server initializes successfully when the client sends both `Accept: application/json, text/event-stream` and the correct `x-api-key` header.
+- `tools/list` returns the full MCP tool surface.
+- `list_skills`, `list_integrations`, `list_knowledge`, `list_crawl_jobs`, `list_conversations`, and `get_business_config` all respond correctly.
+- A live `chat` call successfully returned a calculator answer and persisted a conversation.
+
+## Bug Found and Fixed
+
+### Prompt Tool-Name Mismatch
+
+The agent system prompt was referencing several tool names incorrectly. The runtime tool names are:
+
+- `calculator`
+- `get_datetime`
+- `firecrawl_scrape`
+- `qualify_lead`
+- `route_qualified_lead`
+- `propose_meeting_slots`
+- `book_company_meeting`
+
+The prompt had older names like `qualify_lead`, `propose_meeting_slots`, and `book_company_meeting` mixed with incorrect guidance. That mismatch weakens tool selection and can cause the model to answer from memory when it should call a tool.
+
+### Fix Applied
+
+Updated `packages/agent/src/prompts.ts` to explicitly name the real tools and to give direct usage instructions for:
+
+- time/date requests -> `get_datetime`
+- math/pricing/ROI -> `calculator`
+- lead scoring -> `qualify_lead`
+- lead handoff -> `route_qualified_lead`
+- scheduling -> `propose_meeting_slots` then `book_company_meeting`
+- web ingestion -> `firecrawl_scrape`
+
+## End-to-End Feature Matrix
+
+### 1. MCP Transport and Auth
+
+Test the protocol layer before any business logic.
+
+Checks:
+
+- `POST /mcp` with no `x-api-key` returns a clear auth error.
+- `POST /mcp` with the right key and the required `Accept` header initializes successfully.
+- `tools/list` returns the expected tool catalog.
+- Invalid method names or malformed JSON-RPC bodies fail cleanly.
+
+Pass criteria:
+
+- No transport errors.
+- Correct auth boundary behavior.
+- Stable JSON-RPC responses.
+
+### 2. Business and Agent Configuration
+
+Verify the authenticated agent identity and runtime config.
+
+Checks:
+
+- `get_business_config` returns the correct business and agent IDs.
+- `list_skills` returns the available built-in skills and the enabled subset.
+- `list_integrations` returns the integration state, including meeting and support context.
+- `update_enabled_skills` persists changes and is reflected by a second `list_skills` call.
+
+Pass criteria:
+
+- The key maps to a real business and agent.
+- Skill changes are durable.
+- Integration state matches DB-backed config.
+
+### 3. Chat Core
+
+Verify the main conversational path.
+
+Checks:
+
+- Basic greeting and product explanation.
+- Follow-up clarification when the question is ambiguous.
+- Conversation thread creation on first use.
+- Thread continuation when `threadId` is supplied.
+- Conversation persistence after the reply is generated.
+
+Pass criteria:
+
+- The model returns a coherent answer.
+- A `threadId` is created and can be reused.
+- Conversation history shows the exchange.
+
+### 4. Calculator Skill
+
+Use prompts that should force arithmetic.
+
+Test cases:
+
+- `What is 2 + 2?`
+- `What is 500 * 149?`
+- `What is the annual cost of $149/month?`
+- `If we save 35% of $42,000, what is the savings?`
+
+Pass criteria:
+
+- The result includes the exact math output.
+- The answer is not just a generic acknowledgment.
+
+### 5. Date and Time Skill
+
+Use prompts that require current time or timezone conversion.
+
+Test cases:
+
+- `What is the current date and time in UTC?`
+- `What time is 10 AM Singapore in New York?`
+- `What is tomorrow at 6 PM Asia/Singapore in UTC?`
+
+Pass criteria:
+
+- The response includes an actual timestamp or conversion.
+- Invalid timezone input is handled with a clear error.
+
+### 6. Lead Qualification and Handoff
+
+Use prompts with company size, budget, urgency, and pain points.
+
+Test cases:
+
+- Mid-market SaaS with support pressure.
+- Enterprise prospect with short timeline.
+- Budget-sensitive buyer asking for pricing fit.
+
+Pass criteria:
+
+- The agent gives a sensible qualification response.
+- If qualification is high, lead handoff routing is triggered when configured.
+
+### 7. Meeting Scheduling
+
+Use prompts that ask for slots or booking.
+
+Test cases:
+
+- `Can I book a demo?`
+- `What times are available tomorrow?`
+- `I want a 30-minute meeting next week.`
+
+Pass criteria:
+
+- The agent proposes slots or confirms booking behavior.
+- Meeting integration context is respected.
+
+### 8. Support Escalation
+
+Use prompts that are too technical or need a human.
+
+Test cases:
+
+- Custom API schema questions.
+- Billing dispute or payment issue.
+- Feature gap that should create a support ticket.
+
+Pass criteria:
+
+- The agent escalates when the issue is out of scope.
+- A ticket is created only when support is configured.
+
+### 9. Firecrawl and Knowledge Ingestion
+
+Verify content indexing and retrieval support.
+
+Test cases:
+
+- List current documents.
+- Add a knowledge URL on an allowed domain.
+- Trigger a crawl job.
+- List crawl jobs after enqueue.
+
+Pass criteria:
+
+- Knowledge documents are listed or created correctly.
+- Crawl jobs enqueue or fail with a clear operational error.
+
+### 10. Conversation Retrieval
+
+Verify the history APIs behind the MCP tools.
+
+Test cases:
+
+- `list_conversations` with a limit.
+- `get_conversation` for a known thread.
+
+Pass criteria:
+
+- Conversation metadata is present.
+- Message history is ordered and scoped correctly.
+
+### 11. Admin and Dashboard Surface
+
+Feature area to check in the UI after MCP verification.
+
+Pages to review:
+
+- login and signup
+- onboarding
+- dashboard home
+- agents
+- skills
+- integrations
+- conversations
+- knowledge
+- billing
+- memory
+- theme/profile/settings
+
+Pass criteria:
+
+- Pages load without runtime errors.
+- State shown in the UI matches the API/MCP responses.
+
+### 12. Widget and Public Surface
+
+Feature area to check after backend validation.
+
+Checks:
+
+- Widget embeds and loads the chat surface.
+- Public marketing pages render correctly.
+- Public chat flows respect the current agent configuration.
+
+Pass criteria:
+
+- No console/runtime errors.
+- The widget can reach the backend and display replies.
+
+## MCP Test Sequence Used
+
+1. `initialize`
+2. `tools/list`
+3. `tools/call:list_skills`
+4. `tools/call:list_integrations`
+5. `tools/call:update_enabled_skills`
+6. `tools/call:chat` with a calculator prompt
+7. `tools/call:list_conversations`
+8. `tools/call:get_business_config`
+9. `tools/call:list_knowledge`
+10. `tools/call:list_crawl_jobs`
+11. `tools/call:chat` with a datetime prompt
+
+## Test Results So Far
+
+- MCP auth and negotiation: pass
+- Tool catalog visibility: pass
+- Skill listing and update: pass
+- Conversation persistence: pass
+- Business config retrieval: pass
+- Knowledge listing: pass
+- Crawl job listing: pass
+- Calculator chat: pass
+- Date/time chat: partial pass before prompt fix, now expected to improve after prompt update
+
+## Acceptance Criteria
+
+The work is complete when all of these are true:
+
+- The authenticated MCP API can initialize and list tools.
+- All built-in skills are testable through `chat` or direct MCP tools.
+- Conversation history persists and is retrievable.
+- Knowledge, crawl, and integration tools return valid responses.
+- The prompt uses the real tool names, so the model is not guided by stale names.
+- No new TypeScript or lint errors are introduced.
+
+## Follow-Up Items
+
+- Re-run the `chat` test for the datetime prompt after the prompt fix.
+- Re-run the lead qualification and scheduling prompts to confirm better tool selection.
+- Decide whether the current agent provisioning should auto-enable a default skill set or whether that remains an admin-only configuration step.

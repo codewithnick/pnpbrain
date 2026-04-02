@@ -61,6 +61,16 @@ function isAllowedOrigin(origin: string | undefined, allowedDomains: string[]): 
   }
 }
 
+function previewValue(value: unknown, maxLength = 220): string {
+  if (value === undefined || value === null) return '';
+  try {
+    const raw = typeof value === 'string' ? value : JSON.stringify(value);
+    return raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
+  } catch {
+    return typeof value === 'object' ? '[unserializable object]' : `${value}`;
+  }
+}
+
 async function resolveScopedBusiness(
   conversationBusinessId: string | undefined,
   conversationAgentId: string | undefined,
@@ -82,7 +92,21 @@ async function resolveScopedBusiness(
 
   if (!business && publicToken) {
     const tokenPayload = verifyPublicChatToken(publicToken);
-    business = tokenPayload ? await getBusinessById(tokenPayload.businessId) : null;
+    if (tokenPayload) {
+      if (requestedAgentId && requestedAgentId !== tokenPayload.agentId) {
+        return null;
+      }
+
+      if (conversationAgentId && conversationAgentId !== tokenPayload.agentId) {
+        return null;
+      }
+
+      business = await getBusinessById(tokenPayload.businessId);
+      agent = await resolveAgentForBusiness(tokenPayload.businessId, tokenPayload.agentId);
+      if (!agent || agent.id !== tokenPayload.agentId) {
+        return null;
+      }
+    }
   }
 
   if (!business && conversationBusinessId) {
@@ -178,7 +202,7 @@ export class ChatController {
     if (!isBusinessActive(business)) {
       return res.status(402).json({
         ok: false,
-        error: 'This business has no remaining credits. Top up credits to continue using GCFIS.',
+        error: 'This business has no remaining credits. Top up credits to continue using PNpbrain.',
         code: 'INSUFFICIENT_CREDITS',
       });
     }
@@ -334,6 +358,48 @@ export class ChatController {
       for await (const event of graphStream) {
         if (event.event === 'on_chain_start' && event.name) {
           emit({ type: 'step', step: event.name });
+          emit({ type: 'thinking', stage: 'chain', message: `Running step: ${event.name}` });
+        }
+
+        if (event.event === 'on_tool_start') {
+          const toolName = event.name ?? 'unknown_tool';
+          emit({
+            type: 'thinking',
+            stage: 'tool_start',
+            message: `Using tool: ${toolName}`,
+            toolName,
+            detail: previewValue(event.data?.input),
+          });
+        }
+
+        if (event.event === 'on_tool_end') {
+          const toolName = event.name ?? 'unknown_tool';
+          emit({
+            type: 'thinking',
+            stage: 'tool_end',
+            message: `Finished tool: ${toolName}`,
+            toolName,
+          });
+          emit({
+            type: 'reasoning',
+            source: 'tool',
+            summary: `${toolName} result: ${previewValue(event.data?.output)}`,
+          });
+        }
+
+        if (event.event === 'on_tool_error') {
+          const toolName = event.name ?? 'unknown_tool';
+          const errorDetail =
+            event.data && typeof event.data === 'object'
+              ? (event.data as Record<string, unknown>)['error']
+              : undefined;
+          emit({
+            type: 'thinking',
+            stage: 'tool_error',
+            message: `Tool failed: ${toolName}`,
+            toolName,
+            detail: previewValue(errorDetail),
+          });
         }
 
         if (event.event === 'on_chat_model_stream') {
@@ -351,7 +417,16 @@ export class ChatController {
       // Save assistant message to DB
       const [savedMessage] = await db
         .insert(messages)
-        .values({ conversationId, role: 'assistant', content: fullAssistantResponse })
+        .values({
+          conversationId,
+          role: 'assistant',
+          content: fullAssistantResponse,
+          metadata: {
+            source: 'chatController',
+            llmProvider: agent.llmProvider,
+            llmModel: agent.llmModel,
+          },
+        })
         .returning();
 
       const shouldAutoEscalate =
@@ -381,7 +456,7 @@ export class ChatController {
       }).catch((err) => console.error('[memory] extraction failed:', err));
 
       // Background: record billable usage (non-blocking)
-      recordMessageUsage(business).catch((err: unknown) =>
+      recordMessageUsage(business, agent.id).catch((err: unknown) =>
         console.error('[billing] usage recording failed:', err)
       );
 

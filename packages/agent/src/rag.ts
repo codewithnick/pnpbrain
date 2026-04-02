@@ -11,7 +11,7 @@ import { OllamaEmbeddings } from '@langchain/ollama';
 import { Embeddings } from '@langchain/core/embeddings';
 import { getDb } from '@gcfis/db/client';
 import { knowledgeChunks } from '@gcfis/db/schema';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { RagChunk } from '@gcfis/types';
 
 type DbClient = ReturnType<typeof getDb>;
@@ -150,6 +150,10 @@ export class RagService {
       return [];
     }
 
+    if (!agentId) {
+      return [];
+    }
+
     const db = this.dbProvider();
     const vectorString = `[${queryVector.join(',')}]`;
 
@@ -165,9 +169,7 @@ export class RagService {
       .where(
         and(
           eq(knowledgeChunks.businessId, businessId),
-          agentId
-            ? or(eq(knowledgeChunks.agentId, agentId), isNull(knowledgeChunks.agentId))
-            : undefined
+          eq(knowledgeChunks.agentId, agentId)
         )
       )
       .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorString}::vector`)

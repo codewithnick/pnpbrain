@@ -237,13 +237,13 @@ export default function ProfileSettingsPage() {
         )}
       </Card>
 
-      <Card title="Business description" description="Provides context to the AI. Not shown to customers.">
+      <Card title="Business description" description="Internal business notes. Not shown to customers.">
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
           className={`${fieldCls} resize-none`}
-          placeholder="We are an e-commerce platform specialising in eco-friendly home goods…"
+          placeholder="We are an e-commerce platform specialising in eco-friendly home goods..."
           maxLength={500}
         />
         <p className="mt-1 text-xs text-right text-gray-400 dark:text-slate-500">{description.length}/500</p>
@@ -411,7 +411,7 @@ export default function ProfileSettingsPage() {
           disabled={saving}
           className="px-6 py-2.5 rounded-lg bg-brand-500 text-white text-sm font-semibold hover:bg-brand-600 disabled:opacity-50 transition"
         >
-          {saving ? 'Saving…' : 'Save profile'}
+          {saving ? 'Saving...' : 'Save profile'}
         </button>
       </div>
     </form>

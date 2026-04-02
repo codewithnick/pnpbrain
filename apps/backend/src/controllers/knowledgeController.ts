@@ -22,6 +22,21 @@ export class KnowledgeController {
   public readonly upload = multer({ storage: multer.memoryStorage() });
   private readonly documentExtractionService = new DocumentExtractionService();
 
+  private readRequestedScope(req: Request): { businessId: string | null; agentId: string | null } {
+    const bodyBusinessId = String(req.body?.['businessId'] ?? '').trim();
+    const queryBusinessId = String(req.query['businessId'] ?? '').trim();
+    const headerBusinessId = String(req.header('x-business-id') ?? '').trim();
+
+    const bodyAgentId = String(req.body?.['agentId'] ?? '').trim();
+    const queryAgentId = String(req.query['agentId'] ?? '').trim();
+    const headerAgentId = String(req.header('x-agent-id') ?? '').trim();
+
+    return {
+      businessId: bodyBusinessId || queryBusinessId || headerBusinessId || null,
+      agentId: bodyAgentId || queryAgentId || headerAgentId || null,
+    };
+  }
+
   public readonly list = async (req: Request, res: Response) => {
     const scope = await this.resolveBusinessScope(
       req,
@@ -60,12 +75,11 @@ export class KnowledgeController {
   };
 
   public readonly create = async (req: Request, res: Response) => {
+    const requestedScope = this.readRequestedScope(req);
     const hasMultipart = (req.header('content-type') ?? '').includes('multipart/form-data');
     if (hasMultipart) {
       const title = String(req.body['title'] ?? '').trim();
       const sourceUrl = String(req.body['sourceUrl'] ?? '').trim() || undefined;
-      const requestedBusinessId = String(req.body['businessId'] ?? '').trim() || null;
-      const requestedAgentId = String(req.body['agentId'] ?? '').trim() || null;
 
       if (!title) {
         return res.status(400).json({ ok: false, error: 'title is required' });
@@ -76,7 +90,7 @@ export class KnowledgeController {
         return res.status(400).json({ ok: false, error: 'file is required' });
       }
 
-      const scope = await this.resolveBusinessScope(req, res, requestedBusinessId, requestedAgentId);
+      const scope = await this.resolveBusinessScope(req, res, requestedScope.businessId, requestedScope.agentId);
       if (!scope) return;
 
       const extracted = await this.documentExtractionService.extractText({
@@ -89,12 +103,12 @@ export class KnowledgeController {
         return res.status(400).json({ ok: false, error: 'Uploaded file could not be converted into searchable text.' });
       }
 
-      const s3 = new S3KnowledgeStorageService();
-      const uploaded = await s3.uploadDocument({
+      const contentType = file.mimetype || extracted.contentType || 'application/octet-stream';
+      const uploaded = await this.tryUploadKnowledgeFile({
         businessId: scope.businessId,
         title,
         content: file.buffer,
-        contentType: file.mimetype || extracted.contentType || 'application/octet-stream',
+        contentType,
         fileName: file.originalname,
       });
 
@@ -107,10 +121,10 @@ export class KnowledgeController {
           title,
           content: extracted.text,
           sourceUrl,
-          s3Bucket: uploaded.bucket,
-          s3Key: uploaded.key,
-          contentType: uploaded.contentType,
-          sizeBytes: uploaded.sizeBytes,
+          s3Bucket: uploaded?.bucket ?? null,
+          s3Key: uploaded?.key ?? null,
+          contentType: uploaded?.contentType ?? contentType,
+          sizeBytes: uploaded?.sizeBytes ?? file.size,
         })
         .returning();
 
@@ -133,13 +147,12 @@ export class KnowledgeController {
     const scope = await this.resolveBusinessScope(
       req,
       res,
-      parsed.data.businessId ?? null,
-      parsed.data.agentId ?? null,
+      parsed.data.businessId ?? requestedScope.businessId,
+      parsed.data.agentId ?? requestedScope.agentId,
     );
     if (!scope) return;
 
-    const s3 = new S3KnowledgeStorageService();
-    const uploaded = await s3.uploadDocument({
+    const uploaded = await this.tryUploadKnowledgeFile({
       businessId: scope.businessId,
       title: parsed.data.title,
       content: parsed.data.content,
@@ -156,10 +169,10 @@ export class KnowledgeController {
         title: parsed.data.title,
         content: parsed.data.content,
         sourceUrl: parsed.data.sourceUrl,
-        s3Bucket: uploaded.bucket,
-        s3Key: uploaded.key,
-        contentType: uploaded.contentType,
-        sizeBytes: uploaded.sizeBytes,
+        s3Bucket: uploaded?.bucket ?? null,
+        s3Key: uploaded?.key ?? null,
+        contentType: uploaded?.contentType ?? 'text/plain; charset=utf-8',
+        sizeBytes: uploaded?.sizeBytes ?? Buffer.byteLength(parsed.data.content, 'utf8'),
       })
       .returning();
 
@@ -198,11 +211,13 @@ export class KnowledgeController {
 
       let content = doc.content;
       if (doc.s3Key && isTextLikeContentType(doc.contentType)) {
-        const s3 = new S3KnowledgeStorageService();
-        try {
-          content = await s3.getDocumentText(doc.s3Key);
-        } catch (error) {
-          console.error('[knowledge] failed to load content from s3', error);
+        const s3 = this.createSafeS3KnowledgeStorageService();
+        if (s3) {
+          try {
+            content = await s3.getDocumentText(doc.s3Key);
+          } catch (error) {
+            console.error('[knowledge] failed to load content from s3', error);
+          }
         }
       }
 
@@ -247,8 +262,14 @@ export class KnowledgeController {
       }
 
       if (doc.s3Key) {
-        const s3 = new S3KnowledgeStorageService();
-        await s3.deleteDocument(doc.s3Key);
+        const s3 = this.createSafeS3KnowledgeStorageService();
+        if (s3) {
+          try {
+            await s3.deleteDocument(doc.s3Key);
+          } catch (error) {
+            console.error('[knowledge] failed to delete document from s3', error);
+          }
+        }
       }
 
       await db
@@ -271,8 +292,14 @@ export class KnowledgeController {
     }
 
     if (doc.s3Key) {
-      const s3 = new S3KnowledgeStorageService();
-      await s3.deleteDocument(doc.s3Key);
+      const s3 = this.createSafeS3KnowledgeStorageService();
+      if (s3) {
+        try {
+          await s3.deleteDocument(doc.s3Key);
+        } catch (error) {
+          console.error('[knowledge] failed to delete document from s3', error);
+        }
+      }
     }
 
     await db.delete(knowledgeDocuments).where(eq(knowledgeDocuments.id, id));
@@ -336,6 +363,35 @@ export class KnowledgeController {
         embedding: normalizeEmbeddingVector(vectors[i] ?? []),
       }))
     );
+  }
+
+  private createSafeS3KnowledgeStorageService(): S3KnowledgeStorageService | null {
+    try {
+      return new S3KnowledgeStorageService();
+    } catch (error) {
+      console.error('[knowledge] S3 storage is unavailable; continuing without file archive support', error);
+      return null;
+    }
+  }
+
+  private async tryUploadKnowledgeFile(input: {
+    businessId: string;
+    title: string;
+    content: string | Buffer;
+    contentType: string;
+    fileName?: string;
+  }): Promise<{ key: string; bucket: string; contentType: string; sizeBytes: number } | null> {
+    const s3 = this.createSafeS3KnowledgeStorageService();
+    if (!s3) {
+      return null;
+    }
+
+    try {
+      return await s3.uploadDocument(input);
+    } catch (error) {
+      console.error('[knowledge] failed to upload document to s3', error);
+      return null;
+    }
   }
 }
 

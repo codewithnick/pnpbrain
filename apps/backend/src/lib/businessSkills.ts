@@ -380,6 +380,7 @@ export async function disconnectIntegrationForAgent(
       accessToken: null,
       refreshToken: null,
       tokenExpiresAt: null,
+      configJson: null,
       isDefault: false,
       updatedAt: sql`now()`,
     })

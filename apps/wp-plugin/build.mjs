@@ -1,5 +1,5 @@
 /**
- * build.mjs — GCFIS WordPress Plugin Packager
+ * build.mjs — PNpbrain WordPress Plugin Packager
  *
  * Workflow:
  *   1. Build the widget embed bundle (apps/widget) via esbuild IIFE.

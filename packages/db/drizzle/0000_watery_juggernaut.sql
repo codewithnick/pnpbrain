@@ -34,7 +34,7 @@ CREATE TABLE "agents" (
 	"llm_api_key" text,
 	"llm_base_url" text,
 	"primary_color" text DEFAULT '#6366f1' NOT NULL,
-	"bot_name" text DEFAULT 'GCFIS Assistant' NOT NULL,
+	"bot_name" text DEFAULT 'PNpbrain Assistant' NOT NULL,
 	"welcome_message" text DEFAULT 'Hi! How can I help you today?' NOT NULL,
 	"widget_position" text DEFAULT 'bottom-right' NOT NULL,
 	"widget_theme" text DEFAULT 'light' NOT NULL,

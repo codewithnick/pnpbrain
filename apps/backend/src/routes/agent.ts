@@ -6,15 +6,9 @@ const router: ExpressRouter = Router();
 const chatController = new ChatController();
 
 /**
- * POST /api/agent/chat
- *
- * Main chat endpoint — runs the LangGraph agent and streams SSE events.
- *
- * Request body (JSON):
- *   { message: string; threadId?: string; publicToken?: string }
- *
- * Response:
- *   text/event-stream  →  series of StreamEvent JSON objects
+ * Chat transport endpoints:
+ * - POST /api/agent/chat      -> SSE streaming chat (frontend-agnostic)
+ * - WS   /ws/agent            -> WebSocket streaming chat
  */
 router.post('/chat', chatRateLimiter, chatController.handleChatStream);
 router.post('/escalate', chatRateLimiter, chatController.handleManualEscalation);

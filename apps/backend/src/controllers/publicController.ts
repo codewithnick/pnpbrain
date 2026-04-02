@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import { getDb } from '@gcfis/db/client';
+import { agents, businesses } from '@gcfis/db/schema';
+import { eq } from 'drizzle-orm';
 import {
   generatePublicChatToken,
   getBusinessBySlug,
@@ -24,6 +27,47 @@ function extractOriginHostname(origin: string | undefined): string | null {
   }
 }
 
+interface PublicLookupResult {
+  business: Awaited<ReturnType<typeof getBusinessBySlug>>;
+  agentId?: string;
+  ambiguous?: boolean;
+}
+
+async function resolvePublicTarget(slugOrAgent: string): Promise<PublicLookupResult> {
+  const business = await getBusinessBySlug(slugOrAgent);
+  if (business) {
+    return { business };
+  }
+
+  const db = getDb();
+  const matches = await db
+    .select({
+      business: businesses,
+      agentId: agents.id,
+    })
+    .from(agents)
+    .innerJoin(businesses, eq(agents.businessId, businesses.id))
+    .where(eq(agents.slug, slugOrAgent))
+    .limit(2);
+
+  if (matches.length === 0) {
+    return { business: null };
+  }
+
+  if (matches.length > 1) {
+    return { business: null, ambiguous: true };
+  }
+
+  const firstMatch = matches[0];
+  if (!firstMatch) {
+    return { business: null };
+  }
+
+  return firstMatch.agentId
+    ? { business: firstMatch.business, agentId: firstMatch.agentId }
+    : { business: firstMatch.business };
+}
+
 export class PublicController {
   public readonly getBusinessBySlug = async (req: Request, res: Response) => {
     const slug = req.params['slug'];
@@ -31,12 +75,21 @@ export class PublicController {
       return res.status(400).json({ ok: false, error: 'Invalid slug' });
     }
 
-    const business = await getBusinessBySlug(slug);
+    const lookup = await resolvePublicTarget(slug);
+    if (lookup.ambiguous) {
+      return res.status(409).json({
+        ok: false,
+        error: 'Ambiguous agent identifier. Use the business slug or provide an explicit agentId.',
+      });
+    }
+
+    const business = lookup.business;
     if (!business) {
       return res.status(404).json({ ok: false, error: 'Business not found' });
     }
 
-    const requestedAgentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined;
+    const requestedAgentId =
+      typeof req.query['agentId'] === 'string' ? req.query['agentId'] : lookup.agentId;
     const agent = await resolveAgentForBusiness(business.id, requestedAgentId);
     if (!agent) {
       return res.status(409).json({
@@ -54,11 +107,24 @@ export class PublicController {
         agentId: agent.id,
         botName: agent.botName,
         welcomeMessage: agent.welcomeMessage,
+        placeholder: agent.placeholder,
         primaryColor: agent.primaryColor,
         widgetPosition: agent.widgetPosition,
         widgetTheme: agent.widgetTheme,
         showAvatar: agent.showAvatar,
-        publicChatToken: generatePublicChatToken(business),
+        assistantAvatarMode: agent.assistantAvatarMode,
+        assistantAvatarText: agent.assistantAvatarText,
+        assistantAvatarImageUrl: agent.assistantAvatarImageUrl,
+        showAssistantAvatar: agent.showAssistantAvatar,
+        showUserAvatar: agent.showUserAvatar,
+        userAvatarText: agent.userAvatarText,
+        headerSubtitle: agent.headerSubtitle,
+        chatBackgroundColor: agent.chatBackgroundColor,
+        userMessageColor: agent.userMessageColor,
+        assistantMessageColor: agent.assistantMessageColor,
+        borderRadiusPx: agent.borderRadiusPx,
+        showPoweredBy: agent.showPoweredBy,
+        publicChatToken: generatePublicChatToken(business, { agentId: agent.id }),
       },
     });
   };
@@ -69,13 +135,22 @@ export class PublicController {
       return res.status(400).json({ ok: false, error: parsed.error.issues.map((issue) => issue.message).join(', ') });
     }
 
-    const business = await getBusinessBySlug(parsed.data.slug);
+    const lookup = await resolvePublicTarget(parsed.data.slug);
+    if (lookup.ambiguous) {
+      return res.status(409).json({
+        ok: false,
+        error: 'Ambiguous agent identifier. Use the business slug or provide an explicit agentId.',
+      });
+    }
+
+    const business = lookup.business;
 
     if (!business) {
       return res.status(404).json({ ok: false, error: 'Business not found' });
     }
 
-    const requestedAgentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined;
+    const requestedAgentId =
+      typeof req.query['agentId'] === 'string' ? req.query['agentId'] : lookup.agentId;
     const agent = await resolveAgentForBusiness(business.id, requestedAgentId);
     if (!agent) {
       return res.status(409).json({
@@ -97,11 +172,24 @@ export class PublicController {
         agentId: agent.id,
         botName: agent.botName,
         welcomeMessage: agent.welcomeMessage,
+        placeholder: agent.placeholder,
         primaryColor: agent.primaryColor,
         widgetTheme: agent.widgetTheme,
         widgetPosition: agent.widgetPosition,
         showAvatar: agent.showAvatar,
-        publicChatToken: generatePublicChatToken(business),
+        assistantAvatarMode: agent.assistantAvatarMode,
+        assistantAvatarText: agent.assistantAvatarText,
+        assistantAvatarImageUrl: agent.assistantAvatarImageUrl,
+        showAssistantAvatar: agent.showAssistantAvatar,
+        showUserAvatar: agent.showUserAvatar,
+        userAvatarText: agent.userAvatarText,
+        headerSubtitle: agent.headerSubtitle,
+        chatBackgroundColor: agent.chatBackgroundColor,
+        userMessageColor: agent.userMessageColor,
+        assistantMessageColor: agent.assistantMessageColor,
+        borderRadiusPx: agent.borderRadiusPx,
+        showPoweredBy: agent.showPoweredBy,
+        publicChatToken: generatePublicChatToken(business, { agentId: agent.id }),
       },
     });
   };

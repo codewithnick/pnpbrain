@@ -24,7 +24,7 @@ import {
   upsertIntegrationForAgent,
 } from '../lib/businessSkills';
 
-const LLM_PROVIDERS = ['ollama', 'openai', 'anthropic', 'gemini', 'deepseek', 'huggingface'] as const;
+const LLM_PROVIDERS = ['ollama', 'openai', 'anthropic', 'gemini', 'deepseek', 'huggingface', 'openrouter'] as const;
 const SKILL_NAMES = [
   'calculator',
   'datetime',
@@ -61,9 +61,22 @@ interface AgentOverrideView {
   primaryColor: string;
   botName: string;
   welcomeMessage: string;
+  placeholder: string;
   widgetPosition: string;
   widgetTheme: string;
   showAvatar: boolean;
+  assistantAvatarMode: string;
+  assistantAvatarText: string;
+  assistantAvatarImageUrl: string | null;
+  showAssistantAvatar: boolean;
+  showUserAvatar: boolean;
+  userAvatarText: string;
+  headerSubtitle: string;
+  chatBackgroundColor: string;
+  userMessageColor: string | null;
+  assistantMessageColor: string;
+  borderRadiusPx: number;
+  showPoweredBy: boolean;
   agentApiKey: string | null;
 }
 
@@ -80,9 +93,22 @@ const updateSchema = z.object({
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{3,6}$/).optional(),
   botName: z.string().min(1).max(60).optional(),
   welcomeMessage: z.string().max(200).optional(),
+  placeholder: z.string().max(120).optional(),
   widgetPosition: z.enum(POSITIONS).optional(),
   widgetTheme: z.enum(THEMES).optional(),
   showAvatar: z.boolean().optional(),
+  assistantAvatarMode: z.enum(['initial', 'emoji', 'image']).optional(),
+  assistantAvatarText: z.string().min(1).max(8).optional(),
+  assistantAvatarImageUrl: z.string().url().nullable().optional(),
+  showAssistantAvatar: z.boolean().optional(),
+  showUserAvatar: z.boolean().optional(),
+  userAvatarText: z.string().min(1).max(12).optional(),
+  headerSubtitle: z.string().max(80).optional(),
+  chatBackgroundColor: z.string().regex(/^#[0-9a-fA-F]{3,6}$/).optional(),
+  userMessageColor: z.string().regex(/^#[0-9a-fA-F]{3,6}$/).nullable().optional(),
+  assistantMessageColor: z.string().regex(/^#[0-9a-fA-F]{3,6}$/).optional(),
+  borderRadiusPx: z.number().int().min(8).max(32).optional(),
+  showPoweredBy: z.boolean().optional(),
 });
 
 const connectSchema = z.object({
@@ -93,8 +119,10 @@ async function toSafeBusinessResponse(
   business: Business,
   agentOverride?: AgentOverrideView | null,
 ) {
-  const scope = agentOverride?.id
-    ? { businessId: business.id, agentId: agentOverride.id }
+  const activeAgent = agentOverride ?? (await resolveAgentForBusiness(business.id));
+
+  const scope = activeAgent?.id
+    ? { businessId: business.id, agentId: activeAgent.id }
     : { businessId: business.id, agentId: null };
 
   const [enabledSkills, integrations, meetingIntegration, supportIntegration] = await Promise.all([
@@ -110,20 +138,33 @@ async function toSafeBusinessResponse(
     slug: business.slug,
     description: business.description,
     ownerUserId: business.ownerUserId,
-    allowedDomains: parseAllowedDomains(agentOverride?.allowedDomains ?? '[]'),
+    allowedDomains: parseAllowedDomains(activeAgent?.allowedDomains ?? '[]'),
     enabledSkills,
     integrations,
     meetingIntegration,
     supportIntegration,
-    llmProvider: agentOverride?.llmProvider ?? 'ollama',
-    llmModel: agentOverride?.llmModel ?? 'llama3.1:8b',
-    llmBaseUrl: agentOverride?.llmBaseUrl ?? null,
-    primaryColor: agentOverride?.primaryColor ?? '#6366f1',
-    botName: agentOverride?.botName ?? 'GCFIS Assistant',
-    welcomeMessage: agentOverride?.welcomeMessage ?? 'Hi! How can I help you today?',
-    widgetPosition: agentOverride?.widgetPosition ?? 'bottom-right',
-    widgetTheme: agentOverride?.widgetTheme ?? 'light',
-    showAvatar: agentOverride?.showAvatar ?? true,
+    llmProvider: activeAgent?.llmProvider ?? 'ollama',
+    llmModel: activeAgent?.llmModel ?? 'llama3.1:8b',
+    llmBaseUrl: activeAgent?.llmBaseUrl ?? null,
+    primaryColor: activeAgent?.primaryColor ?? '#6366f1',
+    botName: activeAgent?.botName ?? 'PNpbrain Assistant',
+    welcomeMessage: activeAgent?.welcomeMessage ?? 'Hi! How can I help you today?',
+    placeholder: activeAgent?.placeholder ?? 'Type a message...',
+    widgetPosition: activeAgent?.widgetPosition ?? 'bottom-right',
+    widgetTheme: activeAgent?.widgetTheme ?? 'light',
+    showAvatar: activeAgent?.showAvatar ?? true,
+    assistantAvatarMode: activeAgent?.assistantAvatarMode ?? 'initial',
+    assistantAvatarText: activeAgent?.assistantAvatarText ?? 'A',
+    assistantAvatarImageUrl: activeAgent?.assistantAvatarImageUrl ?? null,
+    showAssistantAvatar: activeAgent?.showAssistantAvatar ?? true,
+    showUserAvatar: activeAgent?.showUserAvatar ?? false,
+    userAvatarText: activeAgent?.userAvatarText ?? 'You',
+    headerSubtitle: activeAgent?.headerSubtitle ?? 'Online',
+    chatBackgroundColor: activeAgent?.chatBackgroundColor ?? '#f9fafb',
+    userMessageColor: activeAgent?.userMessageColor ?? null,
+    assistantMessageColor: activeAgent?.assistantMessageColor ?? '#ffffff',
+    borderRadiusPx: activeAgent?.borderRadiusPx ?? 16,
+    showPoweredBy: activeAgent?.showPoweredBy ?? true,
     trialEndsAt: business.trialEndsAt,
     subscriptionStatus: business.subscriptionStatus,
     stripeCustomerId: business.stripeCustomerId,
@@ -132,9 +173,9 @@ async function toSafeBusinessResponse(
     messagesUsedTotal: business.messagesUsedTotal,
     createdAt: business.createdAt,
     updatedAt: business.updatedAt,
-    agentApiKey: agentOverride?.agentApiKey ?? null,
-    selectedAgentId: agentOverride?.id ?? null,
-    publicChatToken: generatePublicChatToken(business),
+    agentApiKey: activeAgent?.agentApiKey ?? null,
+    selectedAgentId: activeAgent?.id ?? null,
+    publicChatToken: activeAgent ? generatePublicChatToken(business, { agentId: activeAgent.id }) : null,
   };
 }
 
@@ -201,9 +242,22 @@ export class BusinessController {
       || parsed.data.primaryColor !== undefined
       || parsed.data.botName !== undefined
       || parsed.data.welcomeMessage !== undefined
+      || parsed.data.placeholder !== undefined
       || parsed.data.widgetPosition !== undefined
       || parsed.data.widgetTheme !== undefined
       || parsed.data.showAvatar !== undefined
+      || parsed.data.assistantAvatarMode !== undefined
+      || parsed.data.assistantAvatarText !== undefined
+      || parsed.data.assistantAvatarImageUrl !== undefined
+      || parsed.data.showAssistantAvatar !== undefined
+      || parsed.data.showUserAvatar !== undefined
+      || parsed.data.userAvatarText !== undefined
+      || parsed.data.headerSubtitle !== undefined
+      || parsed.data.chatBackgroundColor !== undefined
+      || parsed.data.userMessageColor !== undefined
+      || parsed.data.assistantMessageColor !== undefined
+      || parsed.data.borderRadiusPx !== undefined
+      || parsed.data.showPoweredBy !== undefined
       || parsed.data.enabledSkills !== undefined;
 
     if (requestedAgentScopedUpdates && !selectedAgent) {
@@ -237,6 +291,9 @@ export class BusinessController {
     if (parsed.data.welcomeMessage !== undefined) {
       agentUpdates['welcomeMessage'] = parsed.data.welcomeMessage;
     }
+    if (parsed.data.placeholder !== undefined) {
+      agentUpdates['placeholder'] = parsed.data.placeholder;
+    }
     if (parsed.data.widgetPosition !== undefined) {
       agentUpdates['widgetPosition'] = parsed.data.widgetPosition;
     }
@@ -245,6 +302,42 @@ export class BusinessController {
     }
     if (parsed.data.showAvatar !== undefined) {
       agentUpdates['showAvatar'] = parsed.data.showAvatar;
+    }
+    if (parsed.data.assistantAvatarMode !== undefined) {
+      agentUpdates['assistantAvatarMode'] = parsed.data.assistantAvatarMode;
+    }
+    if (parsed.data.assistantAvatarText !== undefined) {
+      agentUpdates['assistantAvatarText'] = parsed.data.assistantAvatarText;
+    }
+    if (parsed.data.assistantAvatarImageUrl !== undefined) {
+      agentUpdates['assistantAvatarImageUrl'] = parsed.data.assistantAvatarImageUrl;
+    }
+    if (parsed.data.showAssistantAvatar !== undefined) {
+      agentUpdates['showAssistantAvatar'] = parsed.data.showAssistantAvatar;
+    }
+    if (parsed.data.showUserAvatar !== undefined) {
+      agentUpdates['showUserAvatar'] = parsed.data.showUserAvatar;
+    }
+    if (parsed.data.userAvatarText !== undefined) {
+      agentUpdates['userAvatarText'] = parsed.data.userAvatarText;
+    }
+    if (parsed.data.headerSubtitle !== undefined) {
+      agentUpdates['headerSubtitle'] = parsed.data.headerSubtitle;
+    }
+    if (parsed.data.chatBackgroundColor !== undefined) {
+      agentUpdates['chatBackgroundColor'] = parsed.data.chatBackgroundColor;
+    }
+    if (parsed.data.userMessageColor !== undefined) {
+      agentUpdates['userMessageColor'] = parsed.data.userMessageColor;
+    }
+    if (parsed.data.assistantMessageColor !== undefined) {
+      agentUpdates['assistantMessageColor'] = parsed.data.assistantMessageColor;
+    }
+    if (parsed.data.borderRadiusPx !== undefined) {
+      agentUpdates['borderRadiusPx'] = parsed.data.borderRadiusPx;
+    }
+    if (parsed.data.showPoweredBy !== undefined) {
+      agentUpdates['showPoweredBy'] = parsed.data.showPoweredBy;
     }
 
     const updatedBusiness = Object.keys(businessUpdates).length > 0

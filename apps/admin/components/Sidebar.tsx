@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import AnalyticsRoundedIcon from '@mui/icons-material/AnalyticsRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
+import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
@@ -47,6 +48,7 @@ const navItems = [
   { href: '/dashboard/skills', label: 'Skills', icon: <PsychologyRoundedIcon fontSize="small" /> },
   { href: '/dashboard/memory', label: 'Memory', icon: <MemoryRoundedIcon fontSize="small" /> },
   { href: '/dashboard/integrations', label: 'Integrations', icon: <LinkRoundedIcon fontSize="small" /> },
+  { href: '/dashboard/embed', label: 'Embed', icon: <CodeRoundedIcon fontSize="small" /> },
   { href: '/dashboard/conversations', label: 'Conversations', icon: <ChatRoundedIcon fontSize="small" /> },
   { href: '/dashboard/team', label: 'Team', icon: <PeopleRoundedIcon fontSize="small" /> },
   { href: '/dashboard/settings', label: 'Settings', icon: <SettingsRoundedIcon fontSize="small" /> },

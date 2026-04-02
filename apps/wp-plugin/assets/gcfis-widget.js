@@ -1,5 +1,5 @@
 /**
- * GCFIS Widget — bundled embed script placeholder.
+ * PNpbrain Widget — bundled embed script placeholder.
  *
  * In production this file is replaced by the output of:
  *   pnpm --filter @gcfis/widget run build:embed

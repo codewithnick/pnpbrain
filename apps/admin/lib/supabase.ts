@@ -12,6 +12,7 @@ const AGENT_SCOPED_API_PREFIXES = [
   '/api/knowledge',
   '/api/conversations',
   '/api/memory',
+  '/api/skills',
 ];
 
 export function getSupabaseBrowserClient(): SupabaseClient {

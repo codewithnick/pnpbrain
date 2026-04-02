@@ -14,6 +14,9 @@ importers:
       '@types/node':
         specifier: ^22.10.10
         version: 22.19.15
+      dotenv-cli:
+        specifier: ^7.4.2
+        version: 7.4.4
       husky:
         specifier: ^9.1.7
         version: 9.1.7
@@ -159,9 +162,15 @@ importers:
       postgres:
         specifier: ^3.4.5
         version: 3.4.8
+      razorpay:
+        specifier: ^2.9.6
+        version: 2.9.6
       stripe:
         specifier: ^18.4.0
         version: 18.5.0(@types/node@22.19.15)
+      ws:
+        specifier: ^8.18.0
+        version: 8.20.0
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -178,6 +187,9 @@ importers:
       '@types/node':
         specifier: ^22.10.10
         version: 22.19.15
+      '@types/ws':
+        specifier: ^8.5.13
+        version: 8.18.1
       rimraf:
         specifier: ^6.0.1
         version: 6.1.3
@@ -233,6 +245,9 @@ importers:
       '@gcfis/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@gcfis/web-sdk':
+        specifier: workspace:*
+        version: link:../../packages/web-sdk
       '@mui/icons-material':
         specifier: ^7.3.9
         version: 7.3.9(@mui/material@7.3.9(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(@types/react@19.2.14)(react@19.2.4))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@types/react@19.2.14)(react@19.2.4)
@@ -279,6 +294,9 @@ importers:
       '@gcfis/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@gcfis/web-sdk':
+        specifier: workspace:*
+        version: link:../../packages/web-sdk
       next:
         specifier: ^15.1.7
         version: 15.5.14(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -422,6 +440,19 @@ importers:
         version: 5.9.3
 
   packages/types:
+    devDependencies:
+      rimraf:
+        specifier: ^6.0.1
+        version: 6.1.3
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/web-sdk:
+    dependencies:
+      '@gcfis/types':
+        specifier: workspace:*
+        version: link:../types
     devDependencies:
       rimraf:
         specifier: ^6.0.1
@@ -2812,6 +2843,14 @@ packages:
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
 
+  dotenv-cli@7.4.4:
+    resolution: {integrity: sha512-XkBYCG0tPIes+YZr4SpfFv76SQrV/LeCE8CI7JSEMi3VR9MvTihCGTOtbIexD6i2mXF+6px7trb1imVCXSNMDw==}
+    hasBin: true
+
+  dotenv-expand@10.0.0:
+    resolution: {integrity: sha512-GopVGCpVS1UKH75VKHGuQFqS1Gusej0z4FyQkPdwjil2gNIv+LNsqBlboOzpJFZKVT95GkCyWJbBSdFEFUWI2A==}
+    engines: {node: '>=12'}
+
   dotenv@16.6.1:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
     engines: {node: '>=12'}
@@ -3874,6 +3913,9 @@ packages:
   raw-body@3.0.2:
     resolution: {integrity: sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA==}
     engines: {node: '>= 0.10'}
+
+  razorpay@2.9.6:
+    resolution: {integrity: sha512-zsHAQzd6e1Cc6BNoCNZQaf65ElL6O6yw0wulxmoG5VQDr363fZC90Mp1V5EktVzG45yPyNomNXWlf4cQ3622gQ==}
 
   react-dom@19.2.4:
     resolution: {integrity: sha512-AXJdLo8kgMbimY95O2aKQqsz2iWi9jMgKJhRBAxECE4IFxfcazB2LmzloIoibJI3C12IlY20+KFaLv+71bUJeQ==}
@@ -6694,6 +6736,15 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
 
+  dotenv-cli@7.4.4:
+    dependencies:
+      cross-spawn: 7.0.6
+      dotenv: 16.6.1
+      dotenv-expand: 10.0.0
+      minimist: 1.2.8
+
+  dotenv-expand@10.0.0: {}
+
   dotenv@16.6.1: {}
 
   drizzle-kit@0.30.6:
@@ -7771,6 +7822,12 @@ snapshots:
       http-errors: 2.0.1
       iconv-lite: 0.7.2
       unpipe: 1.0.0
+
+  razorpay@2.9.6:
+    dependencies:
+      axios: 1.14.0
+    transitivePeerDependencies:
+      - debug
 
   react-dom@19.2.4(react@19.2.4):
     dependencies:

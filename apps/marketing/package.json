@@ -12,6 +12,7 @@
     "clean": "rimraf .next"
   },
   "dependencies": {
+    "@gcfis/web-sdk": "workspace:*",
     "@gcfis/types": "workspace:*",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",

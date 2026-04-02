@@ -1,4 +1,5 @@
 import express from 'express';
+import { createServer } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { loadBackendEnv } from './lib/loadEnv';
 import { corsMwfn } from './middleware/cors';
@@ -20,6 +21,7 @@ import { mcpRateLimiter } from './middleware/rateLimit';
 import { createMcpServer } from './mcp/server';
 import { getAgentByApiKey } from './lib/agents';
 import { getBusinessById } from './lib/business';
+import { createChatWebSocketServer } from './realtime/chatWebSocketServer';
 
 loadBackendEnv();
 
@@ -129,8 +131,23 @@ app.use(errorHandler);
 
 // ─── Start Server ──────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+const httpServer = createServer(app);
+const chatWss = createChatWebSocketServer({ path: '/ws/agent' });
+
+httpServer.on('upgrade', (req, socket, head) => {
+  if (!chatWss.shouldHandle(req)) {
+    socket.destroy();
+    return;
+  }
+
+  chatWss.handleUpgrade(req, socket, head, (ws) => {
+    chatWss.emit('connection', ws, req);
+  });
+});
+
+httpServer.listen(PORT, () => {
   console.log(`[backend] Express server running on http://localhost:${PORT}`);
+  console.log(`[backend] WebSocket chat endpoint running on ws://localhost:${PORT}/ws/agent`);
 });
 
 export default app;

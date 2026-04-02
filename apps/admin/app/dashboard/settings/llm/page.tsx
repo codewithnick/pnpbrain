@@ -14,12 +14,20 @@ const PROVIDERS = [
   { value: 'ollama',     label: 'Ollama', description: 'Self-hosted — runs on your own machine or server. Free.' },
   { value: 'openai',     label: 'OpenAI', description: 'Hosted API — GPT-4o, GPT-4o mini, etc.' },
   { value: 'anthropic',  label: 'Anthropic', description: 'Hosted API — Claude 3.5 Haiku / Sonnet.' },
+  { value: 'gemini',     label: 'Google Gemini', description: 'Hosted API — Gemini 1.5 / 2.0 model family.' },
+  { value: 'deepseek',   label: 'DeepSeek', description: 'Hosted API — DeepSeek Chat and Reasoner models.' },
+  { value: 'huggingface', label: 'Hugging Face', description: 'Hosted router API — open models from multiple providers.' },
+  { value: 'openrouter', label: 'OpenRouter', description: 'Hosted router API — unified access to models across providers.' },
 ];
 
 const DEFAULT_MODELS: Record<string, string> = {
   ollama:    'llama3.1:8b',
   openai:    'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-20241022',
+  gemini: 'gemini-1.5-flash',
+  deepseek: 'deepseek-chat',
+  huggingface: 'meta-llama/Llama-3.1-8B-Instruct',
+  openrouter: 'openai/gpt-4o-mini',
 };
 
 const fieldCls =
@@ -38,6 +46,9 @@ export default function LlmSettingsPage() {
   const [model, setModel]         = useState('llama3.1:8b');
   const [apiKey, setApiKey]       = useState('');
   const [baseUrl, setBaseUrl]     = useState('');
+
+  const providerSupportsApiKey = provider !== 'ollama';
+  const providerSupportsBaseUrl = provider === 'ollama' || provider === 'deepseek' || provider === 'huggingface' || provider === 'openrouter';
 
   useEffect(() => {
     (async () => {
@@ -71,8 +82,8 @@ export default function LlmSettingsPage() {
     setSaving(true);
 
     const body: Record<string, unknown> = { llmProvider: provider, llmModel: model };
-    if (provider === 'ollama') body.llmBaseUrl = baseUrl || null;
-    if ((provider === 'openai' || provider === 'anthropic') && apiKey) body.llmApiKey = apiKey;
+    if (providerSupportsBaseUrl) body.llmBaseUrl = baseUrl || null;
+    if (providerSupportsApiKey && apiKey) body.llmApiKey = apiKey;
 
     if (!agentId) {
       setSaving(false);
@@ -161,7 +172,15 @@ export default function LlmSettingsPage() {
             ? 'Any model tag pulled in Ollama (e.g. llama3.1:8b, mistral, gemma3:4b).'
             : provider === 'openai'
             ? 'Any OpenAI model: gpt-4o, gpt-4o-mini, gpt-4-turbo…'
-            : 'Any Anthropic model: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022…'}
+            : provider === 'anthropic'
+            ? 'Any Anthropic model: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022…'
+            : provider === 'gemini'
+            ? 'Any Gemini model: gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash…'
+            : provider === 'deepseek'
+            ? 'DeepSeek models: deepseek-chat, deepseek-reasoner…'
+            : provider === 'huggingface'
+            ? 'Hugging Face router model IDs, e.g. meta-llama/Llama-3.1-8B-Instruct.'
+            : 'OpenRouter model IDs, e.g. openai/gpt-4o-mini, anthropic/claude-3.5-sonnet.'}
         </p>
         <input
           type="text"
@@ -173,25 +192,39 @@ export default function LlmSettingsPage() {
         />
       </div>
 
-      {/* Ollama base URL */}
-      {provider === 'ollama' && (
+      {/* Provider base URL */}
+      {providerSupportsBaseUrl && (
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Ollama base URL</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Base URL</h3>
           <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
-            Leave blank to use the server's default Ollama instance.
+            {provider === 'ollama'
+              ? "Leave blank to use the server's default Ollama instance."
+              : provider === 'deepseek'
+              ? "Leave blank to use the default DeepSeek API endpoint."
+                : provider === 'huggingface'
+                ? 'Leave blank to use the default Hugging Face router endpoint.'
+                : 'Leave blank to use the default OpenRouter endpoint.'}
           </p>
           <input
             type="url"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             className={`${fieldCls} font-mono`}
-            placeholder="http://localhost:11434"
+            placeholder={
+              provider === 'ollama'
+                ? 'http://localhost:11434'
+                : provider === 'deepseek'
+                ? 'https://api.deepseek.com/v1'
+                : provider === 'huggingface'
+                ? 'https://router.huggingface.co/v1'
+                : 'https://openrouter.ai/api/v1'
+            }
           />
         </div>
       )}
 
       {/* API key */}
-      {(provider === 'openai' || provider === 'anthropic') && (
+      {providerSupportsApiKey && (
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">API key</h3>
           <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
@@ -204,7 +237,19 @@ export default function LlmSettingsPage() {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             className={`${fieldCls} font-mono`}
-            placeholder={provider === 'openai' ? 'sk-…' : 'sk-ant-…'}
+            placeholder={
+              provider === 'openai'
+                ? 'sk-...'
+                : provider === 'anthropic'
+                ? 'sk-ant-...'
+                : provider === 'gemini'
+                ? 'AIza... or Gemini API key'
+                : provider === 'deepseek'
+                ? 'sk-...'
+                : provider === 'huggingface'
+                ? 'hf_...'
+                : 'sk-or-v1-...'
+            }
             autoComplete="off"
           />
         </div>

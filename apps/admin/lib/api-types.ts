@@ -20,9 +20,22 @@ export interface Agent {
   primaryColor: string;
   botName: string;
   welcomeMessage: string;
+  placeholder: string;
   widgetPosition: 'bottom-right' | 'bottom-left';
   widgetTheme: 'light' | 'dark';
   showAvatar: boolean;
+  assistantAvatarMode: 'initial' | 'emoji' | 'image';
+  assistantAvatarText: string;
+  assistantAvatarImageUrl?: string | null;
+  showAssistantAvatar: boolean;
+  showUserAvatar: boolean;
+  userAvatarText: string;
+  headerSubtitle: string;
+  chatBackgroundColor: string;
+  userMessageColor?: string | null;
+  assistantMessageColor: string;
+  borderRadiusPx: number;
+  showPoweredBy: boolean;
   agentApiKey?: string | null;
   archivedAt?: string | null;
   enabledSkills?: string[];
@@ -78,6 +91,30 @@ export interface DashboardUsage {
   };
 }
 
+export interface DashboardTrendPoint {
+  date: string;
+  conversations: number;
+  userMessages: number;
+  assistantMessages: number;
+  memoryFacts: number;
+  crawlJobs: number;
+  creditsUsed: number;
+  firecrawlQueued: number;
+  firecrawlRunning: number;
+  firecrawlDone: number;
+  firecrawlError: number;
+  modelUsage: Record<string, number>;
+}
+
+export interface DashboardTrends {
+  range: {
+    days: number;
+    startDate: string;
+    endDate: string;
+  };
+  points: DashboardTrendPoint[];
+}
+
 export interface ConversationSummary {
   id: string;
   sessionId: string;
@@ -87,6 +124,9 @@ export interface ConversationSummary {
   lastMessageRole: 'user' | 'assistant' | 'system' | 'tool' | null;
   messageCount: number;
   userMessageCount: number;
+  assistantMessageCount?: number;
+  firstResponseMs?: number | null;
+  conversationDurationMs?: number | null;
   preview: string;
 }
 
@@ -95,6 +135,7 @@ export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   createdAt: string;
+  responseTimeMs?: number | null;
   metadata?: unknown;
 }
 

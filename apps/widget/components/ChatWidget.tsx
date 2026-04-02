@@ -7,8 +7,50 @@
  * Communicates with the PNPBrain backend via streaming SSE fetch.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { Fragment, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { WidgetConfig, StreamEvent } from '@gcfis/types';
+import { createChatClient } from '@gcfis/web-sdk';
+
+const TOOL_LABELS: Record<string, string> = {
+  calculator: 'doing a quick calculation',
+  get_datetime: 'checking time and date details',
+  firecrawl_scrape: 'looking up website information',
+  qualify_lead: 'assessing your use case',
+  route_qualified_lead: 'preparing handoff details',
+  propose_meeting_slots: 'finding available meeting times',
+  book_company_meeting: 'booking your meeting',
+};
+
+function normalizeTraceLine(rawLine: string): string | null {
+  const line = rawLine.trim();
+  if (!line) return null;
+
+  const lower = line.toLowerCase();
+  if (lower.startsWith('step:') || lower.startsWith('running step:')) {
+    if (lower.includes('retrieving_context')) return 'Looking up relevant information';
+    if (lower.includes('decide')) return 'Planning the best response';
+    if (lower.includes('channelwrite') || lower.includes('branch<') || lower.includes('branch:')) {
+      return null;
+    }
+    return 'Working on your request';
+  }
+
+  if (lower.startsWith('using tool:')) {
+    const toolName = line.slice('Using tool:'.length).trim();
+    const friendly = TOOL_LABELS[toolName] ?? 'using a helper tool';
+    return `I am ${friendly}`;
+  }
+
+  if (lower.startsWith('finished tool:')) {
+    return 'Tool check complete';
+  }
+
+  if (lower.includes('result:')) {
+    return 'Summarizing what I found';
+  }
+
+  return line;
+}
 
 interface Message {
   id: string;
@@ -20,15 +62,184 @@ interface ChatWidgetProps {
   config: WidgetConfig;
 }
 
-export default function ChatWidget({ config }: ChatWidgetProps) {
+type ContentBlock =
+  | { kind: 'paragraph'; text: string }
+  | { kind: 'ordered-list'; items: string[] }
+  | { kind: 'unordered-list'; items: string[] };
+
+function parseContentBlocks(content: string): ContentBlock[] {
+  const lines = content.split(/\r?\n/);
+  const blocks: ContentBlock[] = [];
+
+  let paragraphLines: string[] = [];
+  let listKind: 'ordered-list' | 'unordered-list' | null = null;
+  let listItems: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    const text = paragraphLines.join(' ').trim();
+    if (text) {
+      blocks.push({ kind: 'paragraph', text });
+    }
+    paragraphLines = [];
+  };
+
+  const flushList = () => {
+    if (!listKind || listItems.length === 0) return;
+    blocks.push({ kind: listKind, items: listItems });
+    listKind = null;
+    listItems = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (!line) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const ordered = line.match(/^\d+\.\s+(.+)$/);
+    if (ordered) {
+      const item = ordered[1];
+      if (!item) continue;
+      flushParagraph();
+      if (listKind !== 'ordered-list') {
+        flushList();
+        listKind = 'ordered-list';
+      }
+      listItems.push(item);
+      continue;
+    }
+
+    const unordered = line.match(/^[-*]\s+(.+)$/);
+    if (unordered) {
+      const item = unordered[1];
+      if (!item) continue;
+      flushParagraph();
+      if (listKind !== 'unordered-list') {
+        flushList();
+        listKind = 'unordered-list';
+      }
+      listItems.push(item);
+      continue;
+    }
+
+    flushList();
+    paragraphLines.push(line);
+  }
+
+  flushParagraph();
+  flushList();
+
+  if (blocks.length === 0 && content.trim()) {
+    return [{ kind: 'paragraph', text: content.trim() }];
+  }
+
+  return blocks;
+}
+
+function renderInlineFormatting(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={`bold-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+
+    return <Fragment key={`text-${index}`}>{part}</Fragment>;
+  });
+}
+
+function RichMessageContent({ content }: { content: string }) {
+  const blocks = parseContentBlocks(content);
+
+  return (
+    <div className="space-y-2">
+      {blocks.map((block, idx) => {
+        if (block.kind === 'paragraph') {
+          return (
+            <p key={`p-${idx}`} className="leading-relaxed">
+              {renderInlineFormatting(block.text)}
+            </p>
+          );
+        }
+
+        if (block.kind === 'ordered-list') {
+          return (
+            <ol key={`ol-${idx}`} className="list-decimal space-y-1 pl-5 leading-relaxed">
+              {block.items.map((item, itemIndex) => (
+                <li key={`oli-${itemIndex}`}>{renderInlineFormatting(item)}</li>
+              ))}
+            </ol>
+          );
+        }
+
+        return (
+          <ul key={`ul-${idx}`} className="list-disc space-y-1 pl-5 leading-relaxed">
+            {block.items.map((item, itemIndex) => (
+              <li key={`uli-${itemIndex}`}>{renderInlineFormatting(item)}</li>
+            ))}
+          </ul>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
   const {
     publicToken,
+    agentId,
     backendUrl,
     botName = 'Assistant',
     primaryColor = '#6366f1',
     placeholder = 'Type a message…',
     welcomeMessage = 'Hi! How can I help you today?',
+    assistantAvatarMode = 'initial',
+    assistantAvatarText,
+    assistantAvatarImageUrl,
+    showAssistantAvatar = true,
+    showUserAvatar = false,
+    userAvatarText = 'You',
+    position = 'bottom-right',
+    headerSubtitle = 'Online',
+    chatBackgroundColor = '#f9fafb',
+    userMessageColor,
+    assistantMessageColor = '#ffffff',
+    borderRadiusPx = 16,
+    showPoweredBy = true,
   } = config;
+
+  const panelRadius = Math.max(8, Math.min(borderRadiusPx, 32));
+  const floatingPositionClass = position === 'bottom-left' ? 'left-6' : 'right-6';
+  const resolvedUserMessageColor = userMessageColor ?? primaryColor;
+  const resolvedAssistantAvatarText =
+    (assistantAvatarText?.trim() || botName.trim().charAt(0) || 'A').slice(0, 2);
+  const resolvedUserAvatarText = (userAvatarText.trim() || 'You').slice(0, 2);
+
+  const renderAssistantAvatar = (sizeClass = 'h-8 w-8') => {
+    if (!showAssistantAvatar) return null;
+
+    if (assistantAvatarMode === 'image' && assistantAvatarImageUrl) {
+      return (
+        <img
+          src={assistantAvatarImageUrl}
+          alt={`${botName} avatar`}
+          className={`${sizeClass} rounded-full object-cover border border-white/30`}
+        />
+      );
+    }
+
+    return (
+      <div
+        className={`${sizeClass} rounded-full bg-white/20 flex items-center justify-center font-bold text-sm`}
+      >
+        {resolvedAssistantAvatarText}
+      </div>
+    );
+  };
 
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -36,8 +247,38 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
   ]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
+  const [liveTrace, setLiveTrace] = useState<string[]>([]);
+  const [transport, setTransport] = useState<'websocket' | 'sse' | null>(null);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const lastTraceRef = useRef('');
+  const chatClient = useMemo(
+    () =>
+      createChatClient({
+        backendUrl,
+        publicToken,
+        ...(agentId ? { agentId } : {}),
+      }),
+    [backendUrl, publicToken, agentId]
+  );
+
+  const appendTrace = useCallback((line: string) => {
+    const normalized = normalizeTraceLine(line);
+    if (!normalized) return;
+    if (normalized === lastTraceRef.current) return;
+    lastTraceRef.current = normalized;
+    setLiveTrace((prev) => [...prev.slice(-5), normalized]);
+  }, []);
+
+  const updateAssistantMessage = useCallback(
+    (
+      assistantId: string,
+      updater: (message: Message) => Message
+    ) => {
+      setMessages((prev) => prev.map((message) => (message.id === assistantId ? updater(message) : message)));
+    },
+    []
+  );
 
   // Auto-scroll to the bottom on new messages
   useEffect(() => {
@@ -52,85 +293,86 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
       setMessages((prev) => [...prev, userMsg]);
       setInput('');
       setThinking(true);
+      setLiveTrace([]);
+      setTransport(null);
 
       // Streaming assistant message placeholder
       const assistantId = crypto.randomUUID();
       setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
 
-      try {
-        const res = await fetch(`${backendUrl}/api/agent/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, publicToken, threadId }),
-        });
-
-        if (!res.ok || !res.body) {
-          throw new Error(`Backend returned ${res.status}`);
+      const applyEvent = (event: StreamEvent) => {
+        if (event.type === 'token') {
+          updateAssistantMessage(assistantId, (message) => ({
+            ...message,
+            content: message.content + event.token,
+          }));
+          return;
         }
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        if (event.type === 'done') {
+          setThreadId(event.threadId);
+          updateAssistantMessage(assistantId, (message) => ({
+            ...message,
+            id: event.message.id,
+            content: event.message.content,
+          }));
+          return;
+        }
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        if (event.type === 'thinking') {
+          appendTrace(event.message);
+          return;
+        }
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
+        if (event.type === 'reasoning') {
+          appendTrace(event.summary);
+          return;
+        }
 
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const json = line.slice(6);
-            if (json === '[DONE]') continue;
+        if (event.type === 'step') {
+          appendTrace(`Step: ${event.step}`);
+          return;
+        }
 
-            try {
-              const event = JSON.parse(json) as StreamEvent;
+        if (event.type === 'error') {
+          updateAssistantMessage(assistantId, (message) => ({
+            ...message,
+            content: `Sorry, something went wrong: ${event.error}`,
+          }));
+        }
+      };
 
-              if (event.type === 'token') {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId ? { ...m, content: m.content + event.token } : m
-                  )
-                );
-              } else if (event.type === 'done') {
-                setThreadId(event.threadId);
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId
-                      ? { ...m, id: event.message.id, content: event.message.content }
-                      : m
-                  )
-                );
-              } else if (event.type === 'error') {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId
-                      ? { ...m, content: `Sorry, something went wrong: ${event.error}` }
-                      : m
-                  )
-                );
-              }
-            } catch {
-              // Ignore parse errors on individual SSE frames
-            }
+      try {
+        const result = await chatClient.sendMessage(
+          {
+            message: text,
+            ...(threadId ? { threadId } : {}),
+          },
+          {
+            onTransport: (nextTransport) => {
+              setTransport(nextTransport);
+              appendTrace(`Connected using ${nextTransport === 'websocket' ? 'WebSocket' : 'SSE'}`);
+            },
+            onEvent: (event) => {
+              applyEvent(event);
+            },
           }
+        );
+
+        if (result.threadId) {
+          setThreadId(result.threadId);
         }
       } catch (err) {
         const errorText = err instanceof Error ? err.message : String(err);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? { ...m, content: `Sorry, I couldn't connect to the server. (${errorText})` }
-              : m
-          )
-        );
+        updateAssistantMessage(assistantId, (message) => ({
+          ...message,
+          content: `Sorry, I couldn't connect to the server. (${errorText})`,
+        }));
       } finally {
         setThinking(false);
       }
     },
-    [backendUrl, publicToken, threadId, thinking]
+    [chatClient, threadId, thinking, appendTrace, updateAssistantMessage]
   );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -140,6 +382,8 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
     }
   }
 
+  const showThinkingBubble = thinking && messages.at(-1)?.content !== '';
+
   return (
     <>
       {/* Floating button */}
@@ -148,7 +392,7 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
           onClick={() => setOpen(true)}
           aria-label="Open chat"
           style={{ backgroundColor: primaryColor }}
-          className="fixed bottom-6 right-6 h-14 w-14 rounded-full text-white shadow-lg flex items-center justify-center text-2xl hover:opacity-90 transition-opacity z-50"
+          className={`fixed bottom-6 ${floatingPositionClass} h-14 w-14 rounded-full text-white shadow-lg flex items-center justify-center text-2xl hover:opacity-90 transition-opacity z-50`}
         >
           💬
         </button>
@@ -156,19 +400,20 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
 
       {/* Chat window */}
       {open && (
-        <div className="fixed bottom-6 right-6 w-[360px] h-[540px] rounded-2xl shadow-2xl flex flex-col overflow-hidden z-50 bg-white border border-gray-200">
+        <div
+          className={`fixed bottom-6 ${floatingPositionClass} w-[360px] h-[540px] shadow-2xl flex flex-col overflow-hidden z-50 bg-white border border-gray-200`}
+          style={{ borderRadius: panelRadius }}
+        >
           {/* Header */}
           <div
             style={{ backgroundColor: primaryColor }}
             className="flex items-center justify-between px-4 py-3 text-white"
           >
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-sm">
-                {botName[0]}
-              </div>
+              {renderAssistantAvatar()}
               <div>
                 <p className="text-sm font-semibold">{botName}</p>
-                <p className="text-xs opacity-70">Online</p>
+                <p className="text-xs opacity-70">{headerSubtitle}</p>
               </div>
             </div>
             <button
@@ -181,33 +426,59 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-gray-50">
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ backgroundColor: chatBackgroundColor }}>
+            {liveTrace.length > 0 && (
+              <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 shadow-sm">
+                <p className="mb-1 font-semibold text-gray-700">Live reasoning ({transport ?? 'stream'})</p>
+                {liveTrace.map((line, idx) => (
+                  <p key={`${line}-${idx}`} className="truncate">{line}</p>
+                ))}
+              </div>
+            )}
+
             {messages.map((msg) => (
               <div
                 key={msg.id}
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div
-                  style={msg.role === 'user' ? { backgroundColor: primaryColor } : {}}
-                  className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
-                    msg.role === 'user'
-                      ? 'text-white'
-                      : 'bg-white border border-gray-100 text-gray-800 shadow-sm'
-                  }`}
-                >
-                  {msg.content || (
-                    <span className="inline-flex gap-1 text-gray-400">
-                      <span className="animate-bounce">·</span>
-                      <span className="animate-bounce [animation-delay:0.1s]">·</span>
-                      <span className="animate-bounce [animation-delay:0.2s]">·</span>
-                    </span>
-                  )}
+                <div className={`flex items-end gap-2 max-w-[88%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  {msg.role === 'assistant' && showAssistantAvatar ? (
+                    <div className="shrink-0">{renderAssistantAvatar('h-7 w-7')}</div>
+                  ) : null}
+                  {msg.role === 'user' && showUserAvatar ? (
+                    <div className="h-7 w-7 rounded-full bg-gray-300 text-gray-700 flex items-center justify-center text-[10px] font-semibold shrink-0">
+                      {resolvedUserAvatarText}
+                    </div>
+                  ) : null}
+
+                  <div
+                    style={
+                      msg.role === 'user'
+                        ? { backgroundColor: resolvedUserMessageColor }
+                        : { backgroundColor: assistantMessageColor }
+                    }
+                    className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'text-white'
+                        : 'border border-gray-100 text-gray-800 shadow-sm'
+                    }`}
+                  >
+                    {msg.content ? (
+                      msg.role === 'assistant' ? <RichMessageContent content={msg.content} /> : <span className="whitespace-pre-wrap">{msg.content}</span>
+                    ) : (
+                      <span className="inline-flex gap-1 text-gray-400">
+                        <span className="animate-bounce">·</span>
+                        <span className="animate-bounce [animation-delay:0.1s]">·</span>
+                        <span className="animate-bounce [animation-delay:0.2s]">·</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
 
             {/* Thinking indicator */}
-            {thinking && messages.at(-1)?.content === '' ? null : thinking ? (
+            {showThinkingBubble ? (
               <div className="flex justify-start">
                 <div className="bg-white border border-gray-100 rounded-2xl px-3 py-2 text-sm text-gray-400 shadow-sm">
                   <span className="inline-flex gap-1">
@@ -244,7 +515,9 @@ export default function ChatWidget({ config }: ChatWidgetProps) {
                 ↑
               </button>
             </div>
-            <p className="text-center text-[10px] text-gray-300 mt-2">Powered by PNPBrain</p>
+            {showPoweredBy ? (
+              <p className="text-center text-[10px] text-gray-300 mt-2">Powered by PNPBrain</p>
+            ) : null}
           </div>
         </div>
       )}
