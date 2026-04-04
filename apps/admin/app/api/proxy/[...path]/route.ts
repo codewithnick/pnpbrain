@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic';
 function getBackendBaseUrl(): string {
   const configured =
     process.env['BACKEND_INTERNAL_URL']?.trim()
+    || process.env['BACKEND_PUBLIC_URL']?.trim()
     || process.env['NEXT_PUBLIC_BACKEND_URL']?.trim()
-    || 'http://localhost:3011';
+    || (process.env['NODE_ENV'] === 'production' ? 'https://api.pnpbrain.com' : 'http://localhost:3011');
 
   return configured.replace(/\/+$/, '');
 }

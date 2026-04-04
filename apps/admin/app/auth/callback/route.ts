@@ -22,23 +22,57 @@ function slugifyBusinessName(value: string): string {
   return normalized || 'business';
 }
 
+function normalizeBackendBaseUrl(value?: string | null): string | null {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.replace(/\/+$/, '');
+}
+
 function getBackendBaseUrls(): string[] {
   const configuredValues = [
-    process.env['NEXT_PUBLIC_BACKEND_URL'],
     process.env['BACKEND_INTERNAL_URL'],
+    process.env['BACKEND_PUBLIC_URL'],
+    process.env['NEXT_PUBLIC_BACKEND_URL'],
+    process.env['NODE_ENV'] === 'production' ? 'https://api.pnpbrain.com' : null,
     'http://localhost:3011',
   ];
 
   const normalizedValues = configuredValues
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value))
-    .map((value) => value.replace(/\/+$/, ''));
+    .map((value) => normalizeBackendBaseUrl(value))
+    .filter((value): value is string => Boolean(value));
 
   return [...new Set(normalizedValues)];
 }
 
+function isMissingVercelDeploymentResponse(response: Response): boolean {
+  if (response.status !== 404) {
+    return false;
+  }
+
+  const vercelError = response.headers.get('x-vercel-error')?.toUpperCase();
+  const server = response.headers.get('server')?.toLowerCase();
+  const responseHost = (() => {
+    try {
+      return new URL(response.url).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+
+  return vercelError === 'DEPLOYMENT_NOT_FOUND'
+    || responseHost.endsWith('.vercel.app')
+    || server === 'vercel';
+}
+
 function shouldRetryProvisionResponse(response: Response): boolean {
-  return response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500;
+  return isMissingVercelDeploymentResponse(response)
+    || response.status === 408
+    || response.status === 425
+    || response.status === 429
+    || response.status >= 500;
 }
 
 async function waitForRetry(delayMs: number): Promise<void> {

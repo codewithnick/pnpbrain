@@ -26,7 +26,16 @@ export function getSupabaseBrowserClient(): SupabaseClient {
 }
 
 export function getBackendUrl(): string {
-  return (process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3011').trim().replace(/\/+$/, '');
+  const configured = process.env['NEXT_PUBLIC_BACKEND_URL']?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, '');
+  }
+
+  if (globalThis.window !== undefined && globalThis.window.location.hostname.endsWith('pnpbrain.com')) {
+    return 'https://api.pnpbrain.com';
+  }
+
+  return 'http://localhost:3011';
 }
 
 function buildBackendRequestUrl(path: string): string {
