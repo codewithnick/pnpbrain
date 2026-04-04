@@ -99,7 +99,7 @@ export async function ensureBusinessProvisioned(): Promise<void> {
       status: response.status,
       error: payload.error ?? null,
     });
-    throw new Error(payload.error ?? `Failed to provision business ${payload.error ? `: ${payload.error}` : 'unknown error'}`);
+    throw new Error(payload.error ?? `Failed to provision business ${payload.error ? `: ${payload.error}` : 'unknown error caught in ensureBusinessProvisioned'}`);
   }
 
   logAuthInfo('ensure_business_register_succeeded', {
