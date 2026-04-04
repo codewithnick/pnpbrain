@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
+import { buildAdminUrl } from '@/lib/public-url';
 import { createClient } from '@/utils/supabase/server';
 
 function toSafeNextPath(value: string | null): string {
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
   const providerError = requestUrl.searchParams.get('error_description');
 
   if (providerError) {
-    const loginUrl = new URL('/login', request.url);
+    const loginUrl = buildAdminUrl('/login', request);
     loginUrl.searchParams.set('error', providerError);
     return NextResponse.redirect(loginUrl);
   }
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
   // Some providers/flows may return without a code; fall back to target path.
   // Middleware will enforce auth and redirect to login if no session exists.
   if (!code) {
-    return NextResponse.redirect(new URL(nextPath, request.url));
+    return NextResponse.redirect(buildAdminUrl(nextPath, request));
   }
 
   const cookieStore = await cookies();
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
-    const loginUrl = new URL('/login', request.url);
+    const loginUrl = buildAdminUrl('/login', request);
     loginUrl.searchParams.set('error', error.message);
     return NextResponse.redirect(loginUrl);
   }
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
     try {
       await ensureBusinessProvisionedServerSide(accessToken, user.email ?? null, user.id);
     } catch (provisionError) {
-      const loginUrl = new URL('/login', request.url);
+      const loginUrl = buildAdminUrl('/login', request);
       loginUrl.searchParams.set(
         'error',
         provisionError instanceof Error
@@ -112,5 +113,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(new URL(nextPath, request.url));
+  return NextResponse.redirect(buildAdminUrl(nextPath, request));
 }

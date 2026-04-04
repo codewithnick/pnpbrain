@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { buildAdminUrl } from '@/lib/public-url';
 import { createClientWithResponse } from '@/utils/supabase/middleware';
 
 export async function middleware(req: NextRequest) {
@@ -17,7 +18,7 @@ export async function middleware(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    const loginUrl = new URL('/login', req.url);
+    const loginUrl = buildAdminUrl('/login', req);
     loginUrl.searchParams.set('next', req.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);
   }

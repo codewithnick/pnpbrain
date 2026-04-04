@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { buildAdminUrl } from '@/lib/public-url';
 import { ensureBusinessProvisioned, persistAccessTokenCookie } from '@/lib/supabase';
 import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/client';
 
@@ -18,7 +19,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const errorParam = new URLSearchParams(window.location.search).get('error');
+    const errorParam = new URLSearchParams(globalThis.window.location.search).get('error');
     if (errorParam) {
       setError(errorParam);
     }
@@ -29,13 +30,14 @@ export default function LoginPage() {
     setLoading(true);
 
     const supabase = createSupabaseBrowserClient();
-    const nextPath = new URLSearchParams(window.location.search).get('next') || '/dashboard';
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
+    const nextPath = new URLSearchParams(globalThis.window.location.search).get('next') || '/dashboard';
+    const redirectUrl = buildAdminUrl('/auth/callback');
+    redirectUrl.searchParams.set('next', nextPath);
 
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo,
+        redirectTo: redirectUrl.toString(),
       },
     });
 

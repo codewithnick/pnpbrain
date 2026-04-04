@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { buildAdminUrl } from '@/lib/public-url';
 import { getBackendUrl, getSupabaseBrowserClient, persistAccessTokenCookie } from '@/lib/supabase';
 
 function slugify(value: string): string {
@@ -57,7 +58,16 @@ export default function SignupPage() {
 
     setLoading(true);
     const supabase = getSupabaseBrowserClient();
-    const { data, error: authError } = await supabase.auth.signUp({ email, password });
+    const emailRedirectUrl = buildAdminUrl('/auth/callback');
+    emailRedirectUrl.searchParams.set('next', '/onboarding');
+
+    const { data, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: emailRedirectUrl.toString(),
+      },
+    });
     setLoading(false);
 
     if (authError) {
