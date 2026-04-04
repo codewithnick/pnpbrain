@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
+import { logAuthError, logAuthInfo, logAuthWarn, maskEmail } from '@/lib/auth-debug';
 import { buildAdminUrl } from '@/lib/public-url';
 import { createClient } from '@/utils/supabase/server';
 
@@ -71,7 +72,17 @@ export async function GET(request: NextRequest) {
   const nextPath = toSafeNextPath(requestUrl.searchParams.get('next'));
   const providerError = requestUrl.searchParams.get('error_description');
 
+  logAuthInfo('auth_callback_received', {
+    nextPath,
+    hasCode: Boolean(code),
+    hasProviderError: Boolean(providerError),
+  });
+
   if (providerError) {
+    logAuthWarn('auth_callback_provider_error', {
+      nextPath,
+      providerError,
+    });
     const loginUrl = buildAdminUrl('/login', request);
     loginUrl.searchParams.set('error', providerError);
     return NextResponse.redirect(loginUrl);
@@ -80,6 +91,7 @@ export async function GET(request: NextRequest) {
   // Some providers/flows may return without a code; fall back to target path.
   // Middleware will enforce auth and redirect to login if no session exists.
   if (!code) {
+    logAuthWarn('auth_callback_missing_code', { nextPath });
     return NextResponse.redirect(buildAdminUrl(nextPath, request));
   }
 
@@ -88,6 +100,7 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
+    logAuthError('auth_callback_exchange_failed', error, { nextPath });
     const loginUrl = buildAdminUrl('/login', request);
     loginUrl.searchParams.set('error', error.message);
     return NextResponse.redirect(loginUrl);
@@ -101,10 +114,28 @@ export async function GET(request: NextRequest) {
   const accessToken = sessionData.session?.access_token;
   const user = userData.user;
 
+  logAuthInfo('auth_callback_session_ready', {
+    nextPath,
+    hasAccessToken: Boolean(accessToken),
+    userId: user?.id ?? null,
+    email: maskEmail(user?.email ?? null),
+  });
+
   if (accessToken && user) {
     try {
+      logAuthInfo('auth_callback_provision_check_started', {
+        userId: user.id,
+        email: maskEmail(user.email ?? null),
+      });
       await ensureBusinessProvisionedServerSide(accessToken, user.email ?? null, user.id);
+      logAuthInfo('auth_callback_provision_check_succeeded', {
+        userId: user.id,
+      });
     } catch (provisionError) {
+      logAuthError('auth_callback_provision_check_failed', provisionError, {
+        userId: user.id,
+        email: maskEmail(user.email ?? null),
+      });
       const loginUrl = buildAdminUrl('/login', request);
       loginUrl.searchParams.set(
         'error',
@@ -116,5 +147,9 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  logAuthInfo('auth_callback_redirecting', {
+    nextPath,
+    hasUser: Boolean(user),
+  });
   return NextResponse.redirect(buildAdminUrl(nextPath, request));
 }

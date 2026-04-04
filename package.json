@@ -6,6 +6,7 @@
   "scripts": {
     "build": "turbo build",
     "dev": "dotenv -e .env.local -- turbo dev",
+    "prod": "dotenv -e .env.prod -- turbo dev",
     "lint": "turbo lint",
     "type-check": "turbo type-check",
     "test:mcp-rigorous": "dotenv -e .env.local -- node scripts/rigorous-mcp-test.mjs",

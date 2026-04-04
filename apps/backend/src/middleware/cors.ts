@@ -27,18 +27,23 @@ function parseOrigins(rawValue: string | undefined): string[] {
 
 export function getAllowedCorsOrigins(): string[] {
   const configuredOrigins = parseOrigins(process.env['ALLOWED_ORIGINS']);
+  const inferredOrigins = [
+    process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'https://admin.pnpbrain.com',
+    process.env['NEXT_PUBLIC_MARKETING_URL'] ?? 'https://pnpbrain.com,https://www.pnpbrain.com',
+    process.env['NEXT_PUBLIC_WIDGET_URL'] ?? 'https://cdn.pnpbrain.com',
+  ].flatMap((value) => parseOrigins(value));
 
-  if (configuredOrigins.length === 0) {
+  if (configuredOrigins.includes('*')) {
     return ['*'];
   }
 
-  const inferredOrigins = [
-    process.env['NEXT_PUBLIC_ADMIN_URL'],
-    process.env['NEXT_PUBLIC_MARKETING_URL'],
-    process.env['NEXT_PUBLIC_WIDGET_URL'],
-  ].flatMap((value) => parseOrigins(value));
+  const combinedOrigins = Array.from(new Set([...configuredOrigins, ...inferredOrigins]));
 
-  return Array.from(new Set([...configuredOrigins, ...inferredOrigins]));
+  if (combinedOrigins.length === 0) {
+    return ['*'];
+  }
+
+  return combinedOrigins;
 }
 
 export function resolveAllowedCorsOrigin(origin: string | undefined): string | null {

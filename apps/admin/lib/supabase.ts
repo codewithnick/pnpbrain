@@ -1,12 +1,12 @@
 'use client';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { logAuthInfo, logAuthWarn, maskEmail } from '@/lib/auth-debug';
 import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/client';
 
 let supabaseClient: SupabaseClient | null = null;
 const SELECTED_AGENT_STORAGE_KEY = 'pnpbrain.selected-agent-id';
 const inFlightBackendRequests = new Map<string, Promise<Response>>();
-const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1']);
 let cachedSelectedAgentId: string | null | undefined;
 
 const AGENT_SCOPED_API_PREFIXES = [
@@ -32,25 +32,13 @@ export function getBackendUrl(): string {
   return process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3011';
 }
 
-function isLoopbackBackendUrl(value: string): boolean {
-  try {
-    return LOOPBACK_HOSTNAMES.has(new URL(value).hostname.toLowerCase());
-  } catch {
-    return false;
-  }
-}
-
 function buildBackendRequestUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const backendUrl = getBackendUrl().trim();
   const baseUrl = backendUrl.length > 0 ? backendUrl : 'http://localhost:3011';
 
-  if (typeof globalThis.window !== 'undefined') {
-    if (!isLoopbackBackendUrl(baseUrl)) {
-      return new URL(normalizedPath, baseUrl).toString();
-    }
-
-    const url = new URL(normalizedPath, 'http://localhost');
+  if (globalThis.window !== undefined) {
+    const url = new URL(normalizedPath, baseUrl);
     return `/api/proxy${url.pathname}${url.search}`;
   }
 
@@ -72,12 +60,18 @@ function slugifyBusinessName(value: string): string {
 
 export async function ensureBusinessProvisioned(): Promise<void> {
   const me = await fetchBackend('/api/business/me');
+  logAuthInfo('ensure_business_lookup_complete', {
+    ok: me.ok,
+    status: me.status,
+  });
+
   if (me.ok || me.status !== 404) {
     return;
   }
 
   const token = await getAccessToken();
   if (!token) {
+    logAuthWarn('ensure_business_missing_access_token');
     return;
   }
 
@@ -86,9 +80,11 @@ export async function ensureBusinessProvisioned(): Promise<void> {
   } = await getSupabaseBrowserClient().auth.getUser();
 
   if (!user) {
+    logAuthWarn('ensure_business_missing_user');
     return;
   }
 
+  const safeEmail = maskEmail(user.email ?? null);
   const guessedName =
     typeof user.user_metadata?.['full_name'] === 'string' && user.user_metadata['full_name'].trim().length >= 2
       ? user.user_metadata['full_name'].trim()
@@ -99,6 +95,11 @@ export async function ensureBusinessProvisioned(): Promise<void> {
   const suffix = user.id.replace(/-/g, '').slice(0, 6).toLowerCase();
 
   const register = async (slug: string) => {
+    logAuthInfo('ensure_business_register_attempt', {
+      email: safeEmail,
+      slug,
+    });
+
     return fetchBackend('/api/auth/register', {
       method: 'POST',
       headers: {
@@ -112,13 +113,27 @@ export async function ensureBusinessProvisioned(): Promise<void> {
   let response = await register(`${slugBase}-${suffix}`.slice(0, 40));
   if (response.status === 409) {
     const fallbackSlug = `${slugBase}-${Date.now().toString().slice(-6)}`.slice(0, 40);
+    logAuthWarn('ensure_business_slug_conflict', {
+      email: safeEmail,
+      fallbackSlug,
+    });
     response = await register(fallbackSlug);
   }
 
   if (!response.ok && response.status !== 200 && response.status !== 201) {
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    logAuthWarn('ensure_business_register_failed', {
+      email: safeEmail,
+      status: response.status,
+      error: payload.error ?? null,
+    });
     throw new Error(payload.error ?? 'Failed to provision business');
   }
+
+  logAuthInfo('ensure_business_register_succeeded', {
+    email: safeEmail,
+    status: response.status,
+  });
 }
 
 export async function getAccessToken(): Promise<string> {
@@ -151,24 +166,24 @@ export function persistAccessTokenCookie(accessToken?: string | null): void {
 }
 
 export function getSelectedAgentId(): string | null {
-  if (typeof window === 'undefined') return null;
+  if (globalThis.window === undefined) return null;
   if (cachedSelectedAgentId !== undefined) return cachedSelectedAgentId;
 
-  const value = window.localStorage.getItem(SELECTED_AGENT_STORAGE_KEY)?.trim();
-  cachedSelectedAgentId = value ? value : null;
+  const value = globalThis.window.localStorage.getItem(SELECTED_AGENT_STORAGE_KEY)?.trim();
+  cachedSelectedAgentId = value || null;
   return cachedSelectedAgentId;
 }
 
 export function setSelectedAgentId(agentId: string | null): void {
-  if (typeof window === 'undefined') return;
+  if (globalThis.window === undefined) return;
 
   if (agentId && agentId.trim().length > 0) {
     const normalizedAgentId = agentId.trim();
     cachedSelectedAgentId = normalizedAgentId;
-    window.localStorage.setItem(SELECTED_AGENT_STORAGE_KEY, normalizedAgentId);
+    globalThis.window.localStorage.setItem(SELECTED_AGENT_STORAGE_KEY, normalizedAgentId);
   } else {
     cachedSelectedAgentId = null;
-    window.localStorage.removeItem(SELECTED_AGENT_STORAGE_KEY);
+    globalThis.window.localStorage.removeItem(SELECTED_AGENT_STORAGE_KEY);
   }
 }
 

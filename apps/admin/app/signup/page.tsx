@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { logAuthError, logAuthInfo, logAuthWarn, maskEmail } from '@/lib/auth-debug';
 import { buildAdminUrl } from '@/lib/public-url';
 import { fetchBackend, getSupabaseBrowserClient, persistAccessTokenCookie } from '@/lib/supabase';
 
@@ -47,11 +48,22 @@ export default function SignupPage() {
     e.preventDefault();
     setError('');
 
+    const safeEmail = maskEmail(email);
+
     if (password !== confirmPassword) {
+      logAuthWarn('signup_validation_failed', {
+        email: safeEmail,
+        reason: 'password_mismatch',
+      });
       setError('Passwords do not match.');
       return;
     }
     if (password.length < 8) {
+      logAuthWarn('signup_validation_failed', {
+        email: safeEmail,
+        reason: 'password_too_short',
+        passwordLength: password.length,
+      });
       setError('Password must be at least 8 characters.');
       return;
     }
@@ -60,6 +72,11 @@ export default function SignupPage() {
     const supabase = getSupabaseBrowserClient();
     const emailRedirectUrl = buildAdminUrl('/auth/callback');
     emailRedirectUrl.searchParams.set('next', '/onboarding');
+
+    logAuthInfo('signup_account_started', {
+      email: safeEmail,
+      emailRedirectTo: emailRedirectUrl.toString(),
+    });
 
     const { data, error: authError } = await supabase.auth.signUp({
       email,
@@ -71,21 +88,50 @@ export default function SignupPage() {
     setLoading(false);
 
     if (authError) {
+      logAuthError('signup_account_failed', authError, { email: safeEmail });
       setError(authError.message);
       return;
     }
+
+    logAuthInfo('signup_account_succeeded', {
+      email: safeEmail,
+      hasSession: Boolean(data.session),
+      hasUser: Boolean(data.user),
+    });
 
     const token =
       data.session?.access_token ??
       // Some Supabase projects require email confirmation before issuing a session.
       // In that case we fall back to sign-in immediately after sign-up.
       (await (async () => {
-        const { data: signInData } = await supabase.auth.signInWithPassword({ email, password });
+        logAuthInfo('signup_retry_signin_started', { email: safeEmail });
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) {
+          logAuthError('signup_retry_signin_failed', signInError, { email: safeEmail });
+          return '';
+        }
+
+        logAuthInfo('signup_retry_signin_succeeded', {
+          email: safeEmail,
+          hasSession: Boolean(signInData.session),
+        });
         return signInData.session?.access_token ?? '';
       })());
 
+    if (!token) {
+      logAuthWarn('signup_missing_access_token', { email: safeEmail });
+    }
+
     persistAccessTokenCookie(token || null);
     setAccessToken(token);
+    logAuthInfo('signup_advanced_to_business_step', {
+      email: safeEmail,
+      hasAccessToken: Boolean(token),
+    });
     setStep(2);
   }
 
@@ -96,9 +142,19 @@ export default function SignupPage() {
     setError('');
 
     if (!slug.match(/^[a-z0-9-]+$/)) {
+      logAuthWarn('signup_business_validation_failed', {
+        slug,
+        reason: 'invalid_slug',
+      });
       setError('Slug may only contain lowercase letters, numbers, and hyphens.');
       return;
     }
+
+    logAuthInfo('signup_business_started', {
+      slug,
+      businessNameLength: businessName.trim().length,
+      hasAccessToken: Boolean(accessToken),
+    });
 
     setLoading(true);
     const res = await fetchBackend('/api/auth/register', {
@@ -112,16 +168,26 @@ export default function SignupPage() {
     setLoading(false);
 
     if (res.status === 409) {
+      logAuthWarn('signup_business_slug_conflict', { slug });
       setError('That slug is already taken — please choose another.');
       return;
     }
 
     if (!res.ok) {
       const json = (await res.json().catch(() => ({}))) as { error?: string };
+      logAuthWarn('signup_business_failed', {
+        slug,
+        status: res.status,
+        error: json.error ?? null,
+      });
       setError(json.error ?? 'Something went wrong. Please try again.');
       return;
     }
 
+    logAuthInfo('signup_business_succeeded', {
+      slug,
+      status: res.status,
+    });
     router.push('/onboarding');
   }
 

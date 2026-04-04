@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { logAuthError, logAuthInfo, logAuthWarn, maskEmail } from '@/lib/auth-debug';
 import { buildAdminUrl } from '@/lib/public-url';
 import { ensureBusinessProvisioned, persistAccessTokenCookie } from '@/lib/supabase';
 import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/client';
@@ -21,6 +22,7 @@ export default function LoginPage() {
   useEffect(() => {
     const errorParam = new URLSearchParams(globalThis.window.location.search).get('error');
     if (errorParam) {
+      logAuthWarn('login_error_from_redirect', { error: errorParam });
       setError(errorParam);
     }
   }, []);
@@ -34,6 +36,11 @@ export default function LoginPage() {
     const redirectUrl = buildAdminUrl('/auth/callback');
     redirectUrl.searchParams.set('next', nextPath);
 
+    logAuthInfo('login_google_started', {
+      nextPath,
+      redirectTo: redirectUrl.toString(),
+    });
+
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -42,9 +49,13 @@ export default function LoginPage() {
     });
 
     if (oauthError) {
+      logAuthError('login_google_failed', oauthError, { nextPath });
       setError(oauthError.message);
       setLoading(false);
+      return;
     }
+
+    logAuthInfo('login_google_redirecting', { nextPath });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -52,20 +63,33 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
 
+    const safeEmail = maskEmail(email);
+    logAuthInfo('login_password_started', { email: safeEmail });
+
     const supabase = createSupabaseBrowserClient();
     const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (authError) {
+      logAuthError('login_password_failed', authError, { email: safeEmail });
       setError(authError.message);
       setLoading(false);
       return;
     }
 
+    logAuthInfo('login_password_succeeded', {
+      email: safeEmail,
+      hasSession: Boolean(data.session),
+      hasUser: Boolean(data.user),
+    });
+
     persistAccessTokenCookie(data.session?.access_token ?? null);
 
     try {
+      logAuthInfo('login_business_provision_check_started', { email: safeEmail });
       await ensureBusinessProvisioned();
+      logAuthInfo('login_business_provision_check_succeeded', { email: safeEmail });
     } catch (provisionError) {
+      logAuthError('login_business_provision_check_failed', provisionError, { email: safeEmail });
       setError(
         provisionError instanceof Error
           ? provisionError.message
@@ -75,6 +99,7 @@ export default function LoginPage() {
       return;
     }
 
+    logAuthInfo('login_redirect_dashboard', { email: safeEmail });
     router.push('/dashboard');
   }
 
