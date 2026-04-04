@@ -13,45 +13,125 @@ function slugifyBusinessName(value: string): string {
   const normalized = value
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
+    .replaceAll(/[^a-z0-9\s-]/g, '')
+    .replaceAll(/\s+/g, '-')
+    .replaceAll(/-+/g, '-')
     .slice(0, 32)
-    .replace(/^-+|-+$/g, '');
+    .replaceAll(/^-+|-+$/g, '');
 
   return normalized || 'business';
 }
 
-async function ensureBusinessProvisionedServerSide(accessToken: string, email: string | null, userId: string) {
-  const backendUrl =
-    process.env['BACKEND_INTERNAL_URL']?.trim()
-    || process.env['NEXT_PUBLIC_BACKEND_URL']?.trim()
-    || 'http://localhost:3011';
+function getBackendBaseUrls(): string[] {
+  const configuredValues = [
+    process.env['NEXT_PUBLIC_BACKEND_URL'],
+    process.env['BACKEND_INTERNAL_URL'],
+    'http://localhost:3011',
+  ];
+
+  const normalizedValues = configuredValues
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.replace(/\/+$/, ''));
+
+  return [...new Set(normalizedValues)];
+}
+
+function shouldRetryProvisionResponse(response: Response): boolean {
+  return response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500;
+}
+
+async function waitForRetry(delayMs: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function fetchBackendWithFallback(path: string, init: RequestInit = {}): Promise<Response> {
+  let lastResponse: Response | null = null;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (const baseUrl of getBackendBaseUrls()) {
+      try {
+        const response = await fetch(new URL(path, `${baseUrl}/`).toString(), {
+          ...init,
+          cache: 'no-store',
+        });
+
+        if (!shouldRetryProvisionResponse(response)) {
+          return response;
+        }
+
+        lastResponse = response;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (attempt < 1) {
+      await waitForRetry(250);
+    }
+  }
+
+  if (lastResponse) {
+    return lastResponse;
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Failed to reach backend API');
+}
+
+async function readProvisioningError(response: Response, fallbackMessage: string): Promise<string> {
+  const contentType = response.headers.get('content-type') ?? '';
+
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+    const errorMessage = payload.error ?? payload.message;
+
+    if (typeof errorMessage === 'string' && errorMessage.trim().length > 0) {
+      return errorMessage;
+    }
+  }
+
+  const bodyText = (await response.text().catch(() => '')).trim();
+  if (!bodyText) {
+    return `${fallbackMessage} (HTTP ${response.status})`;
+  }
+
+  return `${fallbackMessage} (HTTP ${response.status}): ${bodyText.slice(0, 240)}`;
+}
+
+async function ensureBusinessProvisionedServerSide(
+  accessToken: string,
+  email: string | null,
+  userId: string,
+  displayName?: string | null,
+) {
   const authHeader = { Authorization: `Bearer ${accessToken}` };
 
-  const meResponse = await fetch(`${backendUrl}/api/business/me`, {
+  const meResponse = await fetchBackendWithFallback('/api/business/me', {
     headers: authHeader,
-    cache: 'no-store',
   });
 
-  if (meResponse.ok || meResponse.status !== 404) {
+  if (meResponse.ok) {
     return;
   }
 
-  const baseName = email?.split('@')[0]?.trim() || 'My Business';
+  if (meResponse.status !== 404) {
+    throw new Error(await readProvisioningError(meResponse, 'Unable to verify business setup'));
+  }
+
+  const baseName = displayName?.trim() || email?.split('@')[0]?.trim() || 'My Business';
   const safeName = baseName.length >= 2 ? baseName : 'My Business';
   const slugBase = slugifyBusinessName(safeName);
-  const suffix = userId.replace(/-/g, '').slice(0, 6).toLowerCase();
+  const suffix = userId.replaceAll('-', '').slice(0, 6).toLowerCase();
 
   const register = async (slug: string) => {
-    return fetch(`${backendUrl}/api/auth/register`, {
+    return fetchBackendWithFallback('/api/auth/register', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...authHeader,
       },
       body: JSON.stringify({ name: safeName, slug }),
-      cache: 'no-store',
     });
   };
 
@@ -61,8 +141,7 @@ async function ensureBusinessProvisionedServerSide(accessToken: string, email: s
   }
 
   if (!registerResponse.ok && registerResponse.status !== 200 && registerResponse.status !== 201) {
-    const payload = (await registerResponse.json().catch(() => ({}))) as { error?: string };
-    throw new Error(payload.error ?? `Failed to provision business ${payload.error ? `: ${payload.error}` : 'unknown error caught in ensureBusinessProvisionedServerSide'}`);
+    throw new Error(await readProvisioningError(registerResponse, 'Failed to provision business'));
   }
 }
 
@@ -127,7 +206,12 @@ export async function GET(request: NextRequest) {
         userId: user.id,
         email: maskEmail(user.email ?? null),
       });
-      await ensureBusinessProvisionedServerSide(accessToken, user.email ?? null, user.id);
+      await ensureBusinessProvisionedServerSide(
+        accessToken,
+        user.email ?? null,
+        user.id,
+        typeof user.user_metadata?.['full_name'] === 'string' ? user.user_metadata['full_name'] : null,
+      );
       logAuthInfo('auth_callback_provision_check_succeeded', {
         userId: user.id,
       });

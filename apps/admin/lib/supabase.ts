@@ -30,15 +30,58 @@ function slugifyBusinessName(value: string): string {
   return normalized || 'business';
 }
 
+function shouldRetryProvisionResponse(response: Response): boolean {
+  return response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500;
+}
+
+async function waitForRetry(delayMs: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function fetchProvisionResponse(path: string, init: RequestInit = {}): Promise<Response> {
+  let response = await fetchBackend(path, init);
+
+  for (let attempt = 0; attempt < 1 && shouldRetryProvisionResponse(response); attempt += 1) {
+    await waitForRetry(250);
+    response = await fetchBackend(path, init);
+  }
+
+  return response;
+}
+
+async function readProvisioningError(response: Response, fallbackMessage: string): Promise<string> {
+  const contentType = response.headers.get('content-type') ?? '';
+
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+    const errorMessage = payload.error ?? payload.message;
+
+    if (typeof errorMessage === 'string' && errorMessage.trim().length > 0) {
+      return errorMessage;
+    }
+  }
+
+  const bodyText = (await response.text().catch(() => '')).trim();
+  if (!bodyText) {
+    return `${fallbackMessage} (HTTP ${response.status})`;
+  }
+
+  return `${fallbackMessage} (HTTP ${response.status}): ${bodyText.slice(0, 240)}`;
+}
+
 export async function ensureBusinessProvisioned(): Promise<void> {
-  const me = await fetchBackend('/api/business/me');
+  const me = await fetchProvisionResponse('/api/business/me');
   logAuthInfo('ensure_business_lookup_complete', {
     ok: me.ok,
     status: me.status,
   });
 
-  if (me.ok || me.status !== 404) {
+  if (me.ok) {
     return;
+  }
+
+  if (me.status !== 404) {
+    throw new Error(await readProvisioningError(me, 'Unable to verify business setup'));
   }
 
   const token = await getAccessToken();
@@ -72,7 +115,7 @@ export async function ensureBusinessProvisioned(): Promise<void> {
       slug,
     });
 
-    return fetchBackend('/api/auth/register', {
+    return fetchProvisionResponse('/api/auth/register', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -93,13 +136,13 @@ export async function ensureBusinessProvisioned(): Promise<void> {
   }
 
   if (!response.ok && response.status !== 200 && response.status !== 201) {
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    const errorMessage = await readProvisioningError(response, 'Failed to provision business');
     logAuthWarn('ensure_business_register_failed', {
       email: safeEmail,
       status: response.status,
-      error: payload.error ?? null,
+      error: errorMessage,
     });
-    throw new Error(payload.error ?? `Failed to provision business ${payload.error ? `: ${payload.error}` : 'unknown error caught in ensureBusinessProvisioned'}`);
+    throw new Error(errorMessage);
   }
 
   logAuthInfo('ensure_business_register_succeeded', {
