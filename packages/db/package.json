@@ -12,8 +12,9 @@
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:ensure-extensions": "node ./scripts/ensure-db-extensions.mjs",
+    "db:migrate": "pnpm run db:ensure-extensions && drizzle-kit migrate",
+    "db:push": "pnpm run db:ensure-extensions && drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "type-check": "tsc --noEmit",
     "clean": "rimraf dist"

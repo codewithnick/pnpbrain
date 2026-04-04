@@ -5,6 +5,16 @@ import { conversations, messages } from '@pnpbrain/db/schema';
 import { requireBusinessAuth } from '../middleware/auth';
 import { resolveAgentForBusiness } from '../lib/agents';
 
+const toDateOrNull = (value: Date | string | null | undefined): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export class ConversationsController {
   public readonly list = async (req: Request, res: Response) => {
     const auth = await requireBusinessAuth(req, res, 'member');
@@ -51,10 +61,16 @@ export class ConversationsController {
         messageCount: sql<number>`count(*)::int`,
         userMessageCount: sql<number>`count(*) filter (where ${messages.role} = 'user')::int`,
         assistantMessageCount: sql<number>`count(*) filter (where ${messages.role} = 'assistant')::int`,
-        firstMessageAt: sql<Date | null>`min(${messages.createdAt})`,
-        lastMessageAt: sql<Date | null>`max(${messages.createdAt})`,
-        firstUserMessageAt: sql<Date | null>`min(case when ${messages.role} = 'user' then ${messages.createdAt} end)`,
-        firstAssistantMessageAt: sql<Date | null>`min(case when ${messages.role} = 'assistant' then ${messages.createdAt} end)`,
+        firstMessageAt: sql<Date | null>`min(${messages.createdAt})`.mapWith(messages.createdAt),
+        lastMessageAt: sql<Date | null>`max(${messages.createdAt})`.mapWith(messages.createdAt),
+        firstUserMessageAt:
+          sql<Date | null>`min(case when ${messages.role} = 'user' then ${messages.createdAt} end)`.mapWith(
+            messages.createdAt,
+          ),
+        firstAssistantMessageAt:
+          sql<Date | null>`min(case when ${messages.role} = 'assistant' then ${messages.createdAt} end)`.mapWith(
+            messages.createdAt,
+          ),
       })
       .from(messages)
       .where(inArray(messages.conversationId, conversationIds))
@@ -92,14 +108,17 @@ export class ConversationsController {
     const data = conversationRows.map((conversation) => {
       const stats = statsByConversationId.get(conversation.id);
       const lastMessage = latestMessageByConversationId.get(conversation.id);
+      const firstUserMessageAt = toDateOrNull(stats?.firstUserMessageAt);
+      const firstAssistantMessageAt = toDateOrNull(stats?.firstAssistantMessageAt);
+      const firstMessageAt = toDateOrNull(stats?.firstMessageAt);
+      const lastMessageAt = toDateOrNull(stats?.lastMessageAt);
+      const latestMessageAt = toDateOrNull(lastMessage?.createdAt);
       const assistantResponseMs =
-        stats?.firstUserMessageAt && stats.firstAssistantMessageAt
-          ? Math.max(0, stats.firstAssistantMessageAt.getTime() - stats.firstUserMessageAt.getTime())
+        firstUserMessageAt && firstAssistantMessageAt
+          ? Math.max(0, firstAssistantMessageAt.getTime() - firstUserMessageAt.getTime())
           : null;
       const conversationDurationMs =
-        stats?.firstMessageAt && stats.lastMessageAt
-          ? Math.max(0, stats.lastMessageAt.getTime() - stats.firstMessageAt.getTime())
-          : null;
+        firstMessageAt && lastMessageAt ? Math.max(0, lastMessageAt.getTime() - firstMessageAt.getTime()) : null;
 
       return {
         id: conversation.id,
@@ -112,7 +131,7 @@ export class ConversationsController {
         firstResponseMs: assistantResponseMs,
         conversationDurationMs,
         preview: lastMessage?.content.slice(0, 160) ?? '',
-        lastMessageAt: lastMessage?.createdAt.toISOString() ?? conversation.updatedAt.toISOString(),
+        lastMessageAt: latestMessageAt?.toISOString() ?? conversation.updatedAt.toISOString(),
         lastMessageRole: lastMessage?.role ?? null,
       };
     });

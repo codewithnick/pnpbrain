@@ -6,6 +6,7 @@ import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/cl
 let supabaseClient: SupabaseClient | null = null;
 const SELECTED_AGENT_STORAGE_KEY = 'pnpbrain.selected-agent-id';
 const inFlightBackendRequests = new Map<string, Promise<Response>>();
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1']);
 let cachedSelectedAgentId: string | null | undefined;
 
 const AGENT_SCOPED_API_PREFIXES = [
@@ -31,16 +32,27 @@ export function getBackendUrl(): string {
   return process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3011';
 }
 
+function isLoopbackBackendUrl(value: string): boolean {
+  try {
+    return LOOPBACK_HOSTNAMES.has(new URL(value).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 function buildBackendRequestUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const backendUrl = getBackendUrl().trim();
+  const baseUrl = backendUrl.length > 0 ? backendUrl : 'http://localhost:3011';
 
-  if (typeof window !== 'undefined') {
+  if (typeof globalThis.window !== 'undefined') {
+    if (!isLoopbackBackendUrl(baseUrl)) {
+      return new URL(normalizedPath, baseUrl).toString();
+    }
+
     const url = new URL(normalizedPath, 'http://localhost');
     return `/api/proxy${url.pathname}${url.search}`;
   }
-
-  const backendUrl = getBackendUrl().trim();
-  const baseUrl = backendUrl.length > 0 ? backendUrl : 'http://localhost:3011';
 
   return new URL(normalizedPath, baseUrl).toString();
 }
