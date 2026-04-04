@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { getDb } from '@gcfis/db/client';
-import { agents } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { agents } from '@pnpbrain/db/schema';
 import { requireBusinessAuth } from '../middleware/auth';
 import { generateAgentApiKey } from '../lib/agents';
 import { parseAllowedDomains } from '../lib/business';

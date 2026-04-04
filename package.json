@@ -1,5 +1,5 @@
 {
-  "name": "gcfis",
+  "name": "pnpbrain",
   "version": "0.0.1",
   "private": true,
   "description": "PNPBrain – Plug and Play Brain monorepo",
@@ -11,9 +11,9 @@
     "test:mcp-rigorous": "bash -c 'export $(grep -v \"^#\" .env.local | grep -v \"^$\" | xargs) && node scripts/rigorous-mcp-test.mjs'",
     "clean": "turbo clean && rimraf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
-    "db:generate": "bash -c 'export $(grep -v \"^#\" .env.local | grep -v \"^$\" | xargs) && pnpm --filter @gcfis/db db:generate'",
-    "db:push": "bash -c 'export $(grep -v \"^#\" .env.local | grep -v \"^$\" | xargs) && pnpm --filter @gcfis/db db:push'",
-    "db:migrate": "bash -c 'export $(grep -v \"^#\" .env.local | grep -v \"^$\" | xargs) && pnpm --filter @gcfis/db db:migrate'",
+    "db:generate": "bash -c 'export $(grep -v \"^#\" .env.local | grep -v \"^$\" | xargs) && pnpm --filter @pnpbrain/db db:generate'",
+    "db:push": "bash -c 'export $(grep -v \"^#\" .env.local | grep -v \"^$\" | xargs) && pnpm --filter @pnpbrain/db db:push'",
+    "db:migrate": "bash -c 'export $(grep -v \"^#\" .env.local | grep -v \"^$\" | xargs) && pnpm --filter @pnpbrain/db db:migrate'",
     "prepare": "husky"
   },
   "devDependencies": {

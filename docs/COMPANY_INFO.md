@@ -19,6 +19,7 @@ PNPBrain is a **plug-and-play AI Sales & Support Agent** that transforms how bus
 - **Real Actions**: Books meetings, checks orders, qualifies leads, updates inventory
 - **Smart Handoff**: Escalates to humans with full context when needed
 - **Multi-Language**: Supports English, Hindi, and Hinglish
+- **Multi-Channel**: Works on websites, Telegram, WhatsApp, Slack, Discord, and email
 
 ### Key Features
 1. **Knowledge Base Management**
@@ -93,7 +94,7 @@ import { ChatWidget } from '@pnpbrain/widget';
 ```
 
 ### 4. WhatsApp / API
-Direct integration for native mobile apps or messaging platforms
+Direct integration for native mobile apps, Telegram, Slack, WhatsApp, Discord, and other messaging platforms
 
 ---
 

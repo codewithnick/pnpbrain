@@ -1,11 +1,11 @@
 /**
  * PNPBrain Widget Embed Script
  *
- * This file is built into a standalone UMD bundle (gcfis-widget.js) by
+ * This file is built into a standalone UMD bundle (pnpbrain-widget.js) by
  * `pnpm build:embed`.  Business owners drop a single <script> tag on their site:
  *
  *   <script
- *     src="https://cdn.pnpbrain.com/widget/gcfis-widget.js"
+ *     src="https://cdn.pnpbrain.com/widget/pnpbrain-widget.js"
  *     data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
  *     data-backend-url="https://api.pnpbrain.com"
  *     data-bot-name="My Assistant"
@@ -31,12 +31,11 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ChatWidget from './components/ChatWidget';
-import type { WidgetConfig } from '@gcfis/types';
+import type { WidgetConfig } from '@pnpbrain/types';
 
 declare global {
   interface Window {
     PNPBRAIN_CONFIG?: Partial<WidgetConfig>;
-    GCFIS_CONFIG?: Partial<WidgetConfig>;
   }
 }
 
@@ -117,14 +116,13 @@ function buildConfigFromDataset(
   };
 }
 
-(function gcfisEmbed() {
+(function pnpbrainEmbed() {
   const globalConfig = globalThis as typeof globalThis & {
     PNPBRAIN_CONFIG?: Partial<WidgetConfig>;
-    GCFIS_CONFIG?: Partial<WidgetConfig>;
   };
-  const fallbackConfig = globalConfig.PNPBRAIN_CONFIG ?? globalConfig.GCFIS_CONFIG ?? {};
+  const fallbackConfig = globalConfig.PNPBRAIN_CONFIG ?? {};
 
-  const mountNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-gcfis-mount="1"]'));
+  const mountNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-pnpbrain-mount="1"]'));
   if (mountNodes.length > 0) {
     for (const mountNode of mountNodes) {
       let config: WidgetConfig;
@@ -161,7 +159,7 @@ function buildConfigFromDataset(
 
   // Create a host element + shadow DOM to isolate styles
   const host = document.createElement('div');
-  host.id = 'gcfis-widget-host';
+  host.id = 'pnpbrain-widget-host';
   document.body.appendChild(host);
 
   // Shadow DOM for style isolation

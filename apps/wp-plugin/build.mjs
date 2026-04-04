@@ -3,16 +3,16 @@
  *
  * Workflow:
  *   1. Build the widget embed bundle (apps/widget) via esbuild IIFE.
- *   2. Copy the resulting dist/gcfis-widget.js into this plugin's assets/ folder.
- *   3. Zip the entire plugin folder into dist/gcfis-widget.zip (WordPress-ready).
+ *   2. Copy the resulting dist/pnpbrain-widget.js into this plugin's assets/ folder.
+ *   3. Zip the entire plugin folder into dist/pnpbrain-widget.zip (WordPress-ready).
  *
  * Usage (from repo root):
- *   pnpm --filter @gcfis/wp-plugin build
+ *   pnpm --filter @pnpbrain/wp-plugin build
  *   OR directly:
  *   node apps/backend/wp-plugin/build.mjs
  *
  * Output:
- *   apps/backend/wp-plugin/dist/gcfis-widget.zip
+ *   apps/backend/wp-plugin/dist/pnpbrain-widget.zip
  */
 
 import { execSync }                   from 'node:child_process';
@@ -28,7 +28,7 @@ const WIDGET_DIR  = join( REPO_ROOT, 'apps', 'widget' );
 const PLUGIN_DIR  = __dirname;
 const ASSETS_DIR  = join( PLUGIN_DIR, 'assets' );
 const DIST_DIR    = join( PLUGIN_DIR, 'dist' );
-const ZIP_PATH    = join( DIST_DIR, 'gcfis-widget.zip' );
+const ZIP_PATH    = join( DIST_DIR, 'pnpbrain-widget.zip' );
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ try {
     fail( 'Widget embed build failed. Run `node scripts/build-embed.mjs` manually to debug.' );
 }
 
-const BUNDLE_SRC = join( WIDGET_DIR, 'dist', 'gcfis-widget.js' );
+const BUNDLE_SRC = join( WIDGET_DIR, 'dist', 'pnpbrain-widget.js' );
 if ( ! existsSync( BUNDLE_SRC ) ) {
     fail( `Expected bundle not found at ${BUNDLE_SRC}` );
 }
@@ -58,7 +58,7 @@ ok( 'Widget bundle built.' );
 
 log( 'Copying bundle into plugin assets/…' );
 await mkdir( ASSETS_DIR, { recursive: true } );
-await copyFile( BUNDLE_SRC, join( ASSETS_DIR, 'gcfis-widget.js' ) );
+await copyFile( BUNDLE_SRC, join( ASSETS_DIR, 'pnpbrain-widget.js' ) );
 ok( 'Bundle copied.' );
 
 // ── step 3: create distribution zip ─────────────────────────────────────────
@@ -120,7 +120,7 @@ const useNativeZip = await (async () => {
 })();
 
 if ( useNativeZip ) {
-    // Build from inside the plugin dir so the zip contains gcfis-widget/* paths.
+    // Build from inside the plugin dir so the zip contains pnpbrain-widget/* paths.
     const fileList = allFiles.map( f => JSON.stringify( f.relative ) ).join( ' ' );
     execSync(
         `zip -9 -r ${JSON.stringify( ZIP_PATH )} ${fileList}`,
@@ -132,7 +132,7 @@ if ( useNativeZip ) {
 }
 
 ok( `\nWordPress plugin zip ready: ${ZIP_PATH}` );
-ok( 'Done. Upload gcfis-widget.zip via Plugins → Add New → Upload Plugin in WordPress.' );
+ok( 'Done. Upload pnpbrain-widget.zip via Plugins → Add New → Upload Plugin in WordPress.' );
 
 /* ── pure-JS STORED zip writer (fallback) ───────────────────────────────── */
 
@@ -166,7 +166,7 @@ async function writeZipStored( zipPath, files ) {
 
     for ( const { absolute, relative: rel } of files ) {
         const data = await import('node:fs/promises').then( m => m.readFile(absolute) );
-        const nameBytes = Buffer.from( 'gcfis-widget/' + rel );
+        const nameBytes = Buffer.from( 'pnpbrain-widget/' + rel );
         const crc = crc32( data );
         const stat = statSync( absolute );
 

@@ -1,8 +1,8 @@
-# Copilot Instructions for GCFIS
+# Copilot Instructions for PNPBRAIN
 
 ## Project Overview
 
-GCFIS is a TypeScript monorepo for a customer-facing AI platform. It contains:
+PNPBRAIN is a TypeScript monorepo for a customer-facing AI platform. It contains:
 - Next.js apps: `apps/backend`, `apps/admin`, `apps/marketing`, `apps/widget`
 - Shared packages: `packages/agent`, `packages/db`, `packages/tools`, `packages/types`
 - Turborepo task orchestration at repo root

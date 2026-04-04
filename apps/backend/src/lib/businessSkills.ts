@@ -1,9 +1,9 @@
-import { getDb } from '@gcfis/db/client';
+import { getDb } from '@pnpbrain/db/client';
 import {
   agentIntegrations,
   agentSkillSettings,
   SKILL_NAMES,
-} from '@gcfis/db/schema';
+} from '@pnpbrain/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { decryptSecret, encryptSecret } from './secrets';
 

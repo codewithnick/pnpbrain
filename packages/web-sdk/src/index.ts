@@ -1,4 +1,4 @@
-import type { StreamEvent } from '@gcfis/types';
+import type { StreamEvent } from '@pnpbrain/types';
 
 export type ChatTransport = 'websocket' | 'sse';
 

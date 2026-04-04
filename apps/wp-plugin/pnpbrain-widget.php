@@ -1,24 +1,24 @@
 <?php
 /**
  * Plugin Name:       PNpbrain Widget
- * Plugin URI:        https://gcfis.io
+ * Plugin URI:        https://pnpbrain.io
  * Description:       Embed the PNpbrain AI chat widget on your WordPress site. Configure once, chat everywhere.
  * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            PNpbrain
- * Author URI:        https://gcfis.io
+ * Author URI:        https://pnpbrain.io
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain:       gcfis-widget
+ * Text Domain:       pnpbrain-widget
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'GCFIS_WIDGET_VERSION', '1.0.0' );
-define( 'GCFIS_WIDGET_DIR',     plugin_dir_path( __FILE__ ) );
-define( 'GCFIS_WIDGET_URL',     plugin_dir_url( __FILE__ ) );
-define( 'GCFIS_WIDGET_OPTION',  'gcfis_widget_settings' );
+define( 'PNPBRAIN_WIDGET_VERSION', '1.0.0' );
+define( 'PNPBRAIN_WIDGET_DIR',     plugin_dir_path( __FILE__ ) );
+define( 'PNPBRAIN_WIDGET_URL',     plugin_dir_url( __FILE__ ) );
+define( 'PNPBRAIN_WIDGET_OPTION',  'pnpbrain_widget_settings' );
 
 /* ──────────────────────────────────────────────
    1. SETTINGS REGISTRATION
@@ -28,18 +28,18 @@ define( 'GCFIS_WIDGET_OPTION',  'gcfis_widget_settings' );
  * Register plugin settings with WordPress.
  * All values are stored in a single serialized option array.
  */
-function gcfis_register_settings(): void {
+function pnpbrain_register_settings(): void {
     register_setting(
-        'gcfis_widget_group',
-        GCFIS_WIDGET_OPTION,
+        'pnpbrain_widget_group',
+        PNPBRAIN_WIDGET_OPTION,
         [
             'type'              => 'array',
-            'sanitize_callback' => 'gcfis_sanitize_settings',
+            'sanitize_callback' => 'pnpbrain_sanitize_settings',
             'default'           => [],
         ]
     );
 }
-add_action( 'admin_init', 'gcfis_register_settings' );
+add_action( 'admin_init', 'pnpbrain_register_settings' );
 
 /**
  * Sanitize + validate every field coming from the settings form.
@@ -47,7 +47,7 @@ add_action( 'admin_init', 'gcfis_register_settings' );
  * @param mixed $raw Raw POST data.
  * @return array<string, string|bool>
  */
-function gcfis_sanitize_settings( mixed $raw ): array {
+function pnpbrain_sanitize_settings( mixed $raw ): array {
     if ( ! is_array( $raw ) ) {
         return [];
     }
@@ -58,9 +58,9 @@ function gcfis_sanitize_settings( mixed $raw ): array {
     $backend_url = isset( $raw['backend_url'] ) ? trim( $raw['backend_url'] ) : '';
     if ( $backend_url !== '' && ! filter_var( $backend_url, FILTER_VALIDATE_URL ) ) {
         add_settings_error(
-            GCFIS_WIDGET_OPTION,
+            PNPBRAIN_WIDGET_OPTION,
             'invalid_url',
-            __( 'Backend URL must be a valid URL (e.g. https://api.example.com).', 'gcfis-widget' )
+            __( 'Backend URL must be a valid URL (e.g. https://api.example.com).', 'pnpbrain-widget' )
         );
         $backend_url = '';
     }
@@ -70,9 +70,9 @@ function gcfis_sanitize_settings( mixed $raw ): array {
     $public_token = isset( $raw['public_token'] ) ? trim( sanitize_text_field( $raw['public_token'] ) ) : '';
     if ( $public_token !== '' && ! preg_match( '/^[a-zA-Z0-9_\-.]+$/', $public_token ) ) {
         add_settings_error(
-            GCFIS_WIDGET_OPTION,
+            PNPBRAIN_WIDGET_OPTION,
             'invalid_public_token',
-            __( 'Public token may only contain letters, numbers, hyphens, underscores, and dots.', 'gcfis-widget' )
+            __( 'Public token may only contain letters, numbers, hyphens, underscores, and dots.', 'pnpbrain-widget' )
         );
         $public_token = '';
     }
@@ -105,23 +105,23 @@ function gcfis_sanitize_settings( mixed $raw ): array {
    2. ADMIN SETTINGS PAGE
    ────────────────────────────────────────────── */
 
-function gcfis_add_settings_page(): void {
+function pnpbrain_add_settings_page(): void {
     add_options_page(
-        __( 'PNpbrain Widget Settings', 'gcfis-widget' ),
-        __( 'PNpbrain Widget', 'gcfis-widget' ),
+        __( 'PNpbrain Widget Settings', 'pnpbrain-widget' ),
+        __( 'PNpbrain Widget', 'pnpbrain-widget' ),
         'manage_options',
-        'gcfis-widget',
-        'gcfis_render_settings_page'
+        'pnpbrain-widget',
+        'pnpbrain_render_settings_page'
     );
 }
-add_action( 'admin_menu', 'gcfis_add_settings_page' );
+add_action( 'admin_menu', 'pnpbrain_add_settings_page' );
 
-function gcfis_render_settings_page(): void {
+function pnpbrain_render_settings_page(): void {
     if ( ! current_user_can( 'manage_options' ) ) {
         return;
     }
 
-    $opts          = (array) get_option( GCFIS_WIDGET_OPTION, [] );
+    $opts          = (array) get_option( PNPBRAIN_WIDGET_OPTION, [] );
     $backend_url   = $opts['backend_url']     ?? '';
     $public_token  = $opts['public_token']    ?? '';
     $primary_color = $opts['primary_color']   ?? '#6366f1';
@@ -129,7 +129,7 @@ function gcfis_render_settings_page(): void {
     $welcome_msg   = $opts['welcome_message'] ?? 'Hi! How can I help you today?';
     $auto_inject   = ! empty( $opts['auto_inject'] );
 
-    require GCFIS_WIDGET_DIR . 'admin/settings.php';
+    require PNPBRAIN_WIDGET_DIR . 'admin/settings.php';
 }
 
 /* ──────────────────────────────────────────────
@@ -139,11 +139,11 @@ function gcfis_render_settings_page(): void {
 /**
  * Produce a stable, cache-busted version string for the asset.
  */
-function gcfis_asset_version(): string {
-    $path = GCFIS_WIDGET_DIR . 'assets/gcfis-widget.js';
+function pnpbrain_asset_version(): string {
+    $path = PNPBRAIN_WIDGET_DIR . 'assets/pnpbrain-widget.js';
     return file_exists( $path )
-        ? GCFIS_WIDGET_VERSION . '.' . substr( md5_file( $path ), 0, 8 )
-        : GCFIS_WIDGET_VERSION;
+        ? PNPBRAIN_WIDGET_VERSION . '.' . substr( md5_file( $path ), 0, 8 )
+        : PNPBRAIN_WIDGET_VERSION;
 }
 
 /**
@@ -151,13 +151,13 @@ function gcfis_asset_version(): string {
  * Called on wp_enqueue_scripts; also called manually by the shortcode if the
  * script hasn't been enqueued yet.
  */
-function gcfis_enqueue_widget_script(): void {
+function pnpbrain_enqueue_widget_script(): void {
     // Only enqueue once.
-    if ( wp_script_is( 'gcfis-widget', 'enqueued' ) ) {
+    if ( wp_script_is( 'pnpbrain-widget', 'enqueued' ) ) {
         return;
     }
 
-    $opts = (array) get_option( GCFIS_WIDGET_OPTION, [] );
+    $opts = (array) get_option( PNPBRAIN_WIDGET_OPTION, [] );
 
     // Don't output anything if the plugin isn't configured.
     if ( empty( $opts['backend_url'] ) || empty( $opts['public_token'] ) ) {
@@ -165,22 +165,22 @@ function gcfis_enqueue_widget_script(): void {
     }
 
     wp_enqueue_script(
-        'gcfis-widget',
-        GCFIS_WIDGET_URL . 'assets/gcfis-widget.js',
+        'pnpbrain-widget',
+        PNPBRAIN_WIDGET_URL . 'assets/pnpbrain-widget.js',
         [],
-        gcfis_asset_version(),
+        pnpbrain_asset_version(),
         [ 'strategy' => 'defer', 'in_footer' => true ]
     );
 
     /**
-     * Filter: gcfis_widget_config
+     * Filter: pnpbrain_widget_config
      *
      * Allows themes and plugins to override the widget configuration
      * before it is passed to the JS bundle.
      *
      * @param array $config Associative array of widget options.
      */
-    $config = apply_filters( 'gcfis_widget_config', [
+    $config = apply_filters( 'pnpbrain_widget_config', [
         'backendUrl'           => esc_url_raw( $opts['backend_url'] ),
         'publicToken'          => sanitize_text_field( $opts['public_token'] ),
         'primaryColor'         => $opts['primary_color']   ?? '#6366f1',
@@ -203,7 +203,7 @@ function gcfis_enqueue_widget_script(): void {
     ] );
 
     // wp_localize_script JSON-encodes and escapes the data.
-    wp_localize_script( 'gcfis-widget', 'GCFIS_CONFIG', $config );
+    wp_localize_script( 'pnpbrain-widget', 'PNPBRAIN_CONFIG', $config );
 }
 
 /**
@@ -216,12 +216,12 @@ function gcfis_enqueue_widget_script(): void {
  * @param string $src Script src.
  * @return string
  */
-function gcfis_filter_script_tag( string $tag, string $handle, string $src ): string {
-    if ( 'gcfis-widget' !== $handle ) {
+function pnpbrain_filter_script_tag( string $tag, string $handle, string $src ): string {
+    if ( 'pnpbrain-widget' !== $handle ) {
         return $tag;
     }
 
-    $opts = (array) get_option( GCFIS_WIDGET_OPTION, [] );
+    $opts = (array) get_option( PNPBRAIN_WIDGET_OPTION, [] );
     $attrs = [
         'data-public-token'           => esc_attr( $opts['public_token'] ?? '' ),
         'data-backend-url'            => esc_url( $opts['backend_url'] ?? '' ),
@@ -259,14 +259,14 @@ function gcfis_filter_script_tag( string $tag, string $handle, string $src ): st
         $attr_string
     );
 }
-add_filter( 'script_loader_tag', 'gcfis_filter_script_tag', 10, 3 );
+add_filter( 'script_loader_tag', 'pnpbrain_filter_script_tag', 10, 3 );
 
 /* ──────────────────────────────────────────────
    4. AUTO-INJECT (optional, set in Settings)
    ────────────────────────────────────────────── */
 
-function gcfis_maybe_auto_inject(): void {
-    $opts = (array) get_option( GCFIS_WIDGET_OPTION, [] );
+function pnpbrain_maybe_auto_inject(): void {
+    $opts = (array) get_option( PNPBRAIN_WIDGET_OPTION, [] );
 
     if ( empty( $opts['auto_inject'] ) ) {
         return;
@@ -277,12 +277,12 @@ function gcfis_maybe_auto_inject(): void {
         return;
     }
 
-    gcfis_enqueue_widget_script();
+    pnpbrain_enqueue_widget_script();
 }
-add_action( 'wp_enqueue_scripts', 'gcfis_maybe_auto_inject' );
+add_action( 'wp_enqueue_scripts', 'pnpbrain_maybe_auto_inject' );
 
 /* ──────────────────────────────────────────────
-   5. SHORTCODE  [gcfis_widget]
+   5. SHORTCODE  [pnpbrain_widget]
    ────────────────────────────────────────────── */
 
 /**
@@ -301,8 +301,8 @@ add_action( 'wp_enqueue_scripts', 'gcfis_maybe_auto_inject' );
  * @param array<string, string>|string $atts Shortcode attributes.
  * @return string HTML output.
  */
-function gcfis_widget_shortcode( array|string $atts ): string {
-    $opts = (array) get_option( GCFIS_WIDGET_OPTION, [] );
+function pnpbrain_widget_shortcode( array|string $atts ): string {
+    $opts = (array) get_option( PNPBRAIN_WIDGET_OPTION, [] );
 
     $atts = shortcode_atts(
         [
@@ -327,28 +327,28 @@ function gcfis_widget_shortcode( array|string $atts ): string {
             'show_powered_by'        => ! empty( $opts['show_powered_by'] ) ? '1' : '0',
         ],
         $atts,
-        'gcfis_widget'
+        'pnpbrain_widget'
     );
 
     if ( empty( $atts['public_token'] ) || empty( $atts['backend_url'] ) ) {
         if ( current_user_can( 'manage_options' ) ) {
             return '<p style="color:red;">'
-                . esc_html__( 'PNpbrain Widget: Please configure Backend URL and Public Token in Settings → PNpbrain Widget.', 'gcfis-widget' )
+                . esc_html__( 'PNpbrain Widget: Please configure Backend URL and Public Token in Settings → PNpbrain Widget.', 'pnpbrain-widget' )
                 . '</p>';
         }
         return '';
     }
 
     // Enqueue the script (noop if already done).
-    gcfis_enqueue_widget_script();
+    pnpbrain_enqueue_widget_script();
 
     // The div carries the config so the IIFE can read it, since wp_localize_script
     // may have already printed the global with different values.
-    $mount_id = 'gcfis-widget-' . esc_attr( substr( md5( $atts['public_token'] ), 0, 10 ) );
+    $mount_id = 'pnpbrain-widget-' . esc_attr( substr( md5( $atts['public_token'] ), 0, 10 ) );
 
     return sprintf(
         '<div id="%s" '
-        . 'data-gcfis-mount="1" '
+        . 'data-pnpbrain-mount="1" '
         . 'data-public-token="%s" '
         . 'data-backend-url="%s" '
         . 'data-primary-color="%s" '
@@ -391,17 +391,17 @@ function gcfis_widget_shortcode( array|string $atts ): string {
         esc_attr( $atts['show_powered_by'] )
     );
 }
-add_shortcode( 'gcfis_widget', 'gcfis_widget_shortcode' );
+add_shortcode( 'pnpbrain_widget', 'pnpbrain_widget_shortcode' );
 
 /* ──────────────────────────────────────────────
    6. ACTIVATION / DEACTIVATION HOOKS
    ────────────────────────────────────────────── */
 
-register_activation_hook( __FILE__, 'gcfis_on_activate' );
-function gcfis_on_activate(): void {
+register_activation_hook( __FILE__, 'pnpbrain_on_activate' );
+function pnpbrain_on_activate(): void {
     // Set sane defaults on first activation.
-    if ( get_option( GCFIS_WIDGET_OPTION ) === false ) {
-        update_option( GCFIS_WIDGET_OPTION, [
+    if ( get_option( PNPBRAIN_WIDGET_OPTION ) === false ) {
+        update_option( PNPBRAIN_WIDGET_OPTION, [
             'backend_url'     => '',
             'public_token'    => '',
             'primary_color'   => '#6366f1',
@@ -412,7 +412,7 @@ function gcfis_on_activate(): void {
     }
 }
 
-register_deactivation_hook( __FILE__, 'gcfis_on_deactivate' );
-function gcfis_on_deactivate(): void {
+register_deactivation_hook( __FILE__, 'pnpbrain_on_deactivate' );
+function pnpbrain_on_deactivate(): void {
     // Nothing to tear down — options are kept so re-activation restores settings.
 }

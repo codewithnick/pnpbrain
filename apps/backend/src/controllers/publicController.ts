@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '@gcfis/db/client';
-import { agents, businesses } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { agents, businesses } from '@pnpbrain/db/schema';
 import { eq } from 'drizzle-orm';
 import {
   generatePublicChatToken,

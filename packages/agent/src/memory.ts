@@ -5,8 +5,8 @@
  * the customer so future conversations are personalised.
  */
 
-import { getDb } from '@gcfis/db/client';
-import { agentMemoryFacts, conversations, memoryFacts } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { agentMemoryFacts, conversations, memoryFacts } from '@pnpbrain/db/schema';
 import { and, asc, eq } from 'drizzle-orm';
 import { MEMORY_EXTRACTION_PROMPT } from './prompts.js';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';

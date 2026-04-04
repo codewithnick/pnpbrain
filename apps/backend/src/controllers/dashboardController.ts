@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { and, count, eq, gte } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
+import { getDb } from '@pnpbrain/db/client';
 import {
   agents,
   businessCreditLedger,
@@ -10,10 +10,11 @@ import {
   memoryFacts,
   messages,
   supportTickets,
-} from '@gcfis/db/schema';
+} from '@pnpbrain/db/schema';
 import { requireBusinessAuth } from '../middleware/auth';
 import { getBusinessById } from '../lib/business';
 import { getEnabledSkillsForAgentScope } from '../lib/businessSkills';
+import { getBillingStatus, refreshBusinessUsageCycleIfNeeded } from '../lib/billing';
 
 function scopedByAgent(
   agentId: string | undefined,
@@ -305,6 +306,8 @@ export class DashboardController {
 
     const business = await getBusinessById(auth.businessId);
     if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
+    const refreshedBusiness = await refreshBusinessUsageCycleIfNeeded(business);
+    const billingStatus = getBillingStatus(refreshedBusiness);
 
     const agentId = typeof req.query['agentId'] === 'string' ? req.query['agentId'] : undefined;
     const conversationsWhere = scopedByAgent(
@@ -389,13 +392,13 @@ export class DashboardController {
       db.select({ value: count() }).from(supportTickets).where(supportSuccessWhere),
     ]);
 
-    const usedCredits = business.creditsUsedTotal;
-    const purchasedCredits = business.creditsPurchasedTotal;
-    const currentBalance = business.creditBalance;
-    const includedCredits = business.signupCreditsGranted + purchasedCredits;
-    const remainingCredits = Math.max(0, currentBalance);
+    const usedCredits = refreshedBusiness.creditsUsedTotal;
+    const purchasedCredits = refreshedBusiness.creditsPurchasedTotal;
+    const currentBalance = refreshedBusiness.creditBalance;
+    const includedCredits = billingStatus.monthlyMessageLimit;
+    const remainingCredits = billingStatus.monthlyMessageLimit === null ? null : Math.max(0, currentBalance);
     const percentUsed =
-      includedCredits === 0
+      includedCredits === null || includedCredits === 0
         ? null
         : Math.min(100, Math.round((usedCredits / includedCredits) * 100));
 
@@ -406,11 +409,13 @@ export class DashboardController {
           used: usedCredits,
           balance: currentBalance,
           purchased: purchasedCredits,
-          signupBonus: business.signupCreditsGranted,
+          signupBonus: refreshedBusiness.signupCreditsGranted,
           included: includedCredits,
           remaining: remainingCredits,
           percentUsed,
-          unit: 'credit',
+          unit: 'message',
+          planTier: billingStatus.planTier,
+          planLabel: billingStatus.planLabel,
         },
         scope: {
           businessId: auth.businessId,

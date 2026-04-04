@@ -3,10 +3,10 @@
  * Used by chat + knowledge routes to load allowed domains, bot name, etc.
  */
 
-import { getDb } from '@gcfis/db/client';
-import { businesses } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { businesses } from '@pnpbrain/db/schema';
 import { eq, sql } from 'drizzle-orm';
-import type { Business } from '@gcfis/db';
+import type { Business } from '@pnpbrain/db';
 
 type CacheEntry = { data: Business; expiresAt: number };
 

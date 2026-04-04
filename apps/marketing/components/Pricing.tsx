@@ -16,49 +16,80 @@ const adminBaseUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3
 
 const plans = [
   {
-    name: 'Starter',
+    name: 'Freemium',
     price: '$0',
     period: '/ month',
-    description: 'Perfect for trying PNPBrain on one site.',
+    description: 'Best for trying PNPBrain before committing.',
     features: [
       '1 website',
-      '100 conversations / month',
+      '200 conversations / month',
       '5 MB knowledge base',
-      'Ollama local dev',
+      'PNPBRAIN subdomain hosting',
       'Community support',
     ],
     cta: 'Get started free',
     highlighted: false,
   },
   {
-    name: 'Growth',
-    price: '$29',
+    name: 'Lite',
+    price: '$19',
     period: '/ month',
-    description: 'For businesses ready to scale.',
+    description: 'Simple monthly plan for early production use.',
     features: [
-      '5 websites',
-      'Unlimited conversations',
+      '3 websites',
+      '2,000 conversations / month',
       '100 MB knowledge base',
-      'Firecrawl auto-refresh',
-      'Long-term memory',
+      'Custom domain support',
+      'Threaded chat history',
       'Email support',
     ],
-    cta: 'Start free trial',
+    cta: 'Start Lite',
+    highlighted: false,
+  },
+  {
+    name: 'Basic',
+    price: '$49',
+    period: '/ month',
+    description: 'For growing teams that need predictable volume.',
+    features: [
+      '10 websites',
+      '10,000 conversations / month',
+      '500 MB knowledge base',
+      'Custom domain support',
+      'Priority email support',
+    ],
+    cta: 'Start Basic',
     highlighted: true,
   },
   {
-    name: 'Enterprise',
+    name: 'Pro',
+    price: '$149',
+    period: '/ month',
+    description: 'High-volume operations with faster response support.',
+    features: [
+      '30 websites',
+      '50,000 conversations / month',
+      '2 GB knowledge base',
+      'Advanced analytics',
+      'Priority support',
+    ],
+    cta: 'Start Pro',
+    highlighted: false,
+  },
+  {
+    name: 'Custom',
     price: 'Custom',
     period: '',
-    description: 'Dedicated infrastructure, SLA, SSO.',
+    description: 'Tailored package with direct onboarding support.',
     features: [
       'Unlimited websites',
-      'Unlimited everything',
+      'High volume conversation limits',
       'Custom LLM provider',
-      'Self-hosted option',
+      'Optional self-hosted deployment',
+      'Security/compliance add-ons',
       'Dedicated support',
     ],
-    cta: 'Contact sales',
+    cta: 'Contact support',
     highlighted: false,
   },
 ];
@@ -80,7 +111,7 @@ export default function Pricing() {
           {plans.map((plan) => (
             <Grid
               key={plan.name}
-              size={{ xs: 12, md: 4 }}
+              size={{ xs: 12, md: 6, lg: 4 }}
             >
               <Card
                 sx={{
@@ -129,7 +160,7 @@ export default function Pricing() {
 
                   <Button
                     component={Link}
-                    href={plan.name === 'Enterprise' ? 'mailto:hello@pnpbrain.com' : `${adminBaseUrl}/signup`}
+                    href={plan.name === 'Custom' ? 'mailto:support@pnpbrain.com' : `${adminBaseUrl}/signup`}
                     variant={plan.highlighted ? 'outlined' : 'contained'}
                     color={plan.highlighted ? 'inherit' : 'primary'}
                     sx={{

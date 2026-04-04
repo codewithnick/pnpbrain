@@ -9,10 +9,10 @@
 
 import { OllamaEmbeddings } from '@langchain/ollama';
 import { Embeddings } from '@langchain/core/embeddings';
-import { getDb } from '@gcfis/db/client';
-import { knowledgeChunks } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { knowledgeChunks } from '@pnpbrain/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
-import type { RagChunk } from '@gcfis/types';
+import type { RagChunk } from '@pnpbrain/types';
 
 type DbClient = ReturnType<typeof getDb>;
 type EmbeddingCacheEntry = { vector: number[]; expiresAt: number };

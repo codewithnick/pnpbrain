@@ -13,7 +13,7 @@ import {
   updateMemberRole,
 } from '../lib/team';
 import { getBusinessById } from '../lib/business';
-import type { BusinessMemberRole } from '@gcfis/db/schema';
+import type { BusinessMemberRole } from '@pnpbrain/db/schema';
 
 const inviteSchema = z.object({
   email: z.string().email(),

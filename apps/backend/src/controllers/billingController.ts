@@ -2,8 +2,8 @@ import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import { eq, sql } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
-import { businesses } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { businesses } from '@pnpbrain/db/schema';
 import { requireBusinessAuth } from '../middleware/auth';
 import { getBusinessById } from '../lib/business';
 import {
@@ -21,6 +21,10 @@ import {
   settleTopUpCheckoutSession,
   syncStripeSubscription,
   topUpBusinessCredits,
+  PLAN_TIERS,
+  type PlanTier,
+  refreshBusinessUsageCycleIfNeeded,
+  setBusinessPlanTier,
 } from '../lib/billing';
 
 export class BillingController {
@@ -30,7 +34,8 @@ export class BillingController {
 
     const business = await getBusinessById(auth.businessId);
     if (!business) return res.status(404).json({ ok: false, error: 'Business not found' });
-    return res.json({ ok: true, data: getBillingStatus(business) });
+    const refreshed = await refreshBusinessUsageCycleIfNeeded(business);
+    return res.json({ ok: true, data: getBillingStatus(refreshed) });
   };
 
   public readonly checkout = async (req: Request, res: Response) => {
@@ -50,11 +55,29 @@ export class BillingController {
       data: { user },
     } = await supabase.auth.admin.getUserById(auth.userId);
 
+    const requestedPlanRaw = String(req.body?.['planTier'] ?? 'basic').toLowerCase();
+    if (!PLAN_TIERS.includes(requestedPlanRaw as PlanTier)) {
+      return res.status(400).json({ ok: false, error: 'Unsupported plan tier' });
+    }
+
+    const requestedPlan = requestedPlanRaw as PlanTier;
+    if (requestedPlan === 'freemium') {
+      const updatedBusiness = await setBusinessPlanTier(auth.businessId, 'freemium');
+      if (!updatedBusiness) {
+        return res.status(404).json({ ok: false, error: 'Business not found' });
+      }
+
+      return res.json({ ok: true, mode: 'direct', data: getBillingStatus(updatedBusiness) });
+    }
+    if (requestedPlan === 'custom') {
+      return res.status(400).json({ ok: false, error: 'Custom plan requires support-assisted onboarding' });
+    }
+
     const adminUrl = process.env['NEXT_PUBLIC_ADMIN_URL'] ?? 'http://localhost:3012';
     const returnUrl = `${adminUrl}/dashboard/settings/billing`;
 
     try {
-      const url = await createCheckoutSession(business, user?.email ?? '', returnUrl);
+      const url = await createCheckoutSession(business, user?.email ?? '', returnUrl, requestedPlan);
       return res.json({ ok: true, url });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

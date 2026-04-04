@@ -345,11 +345,11 @@ export default function DashboardPage() {
           <Paper sx={{ p: 3, borderRadius: 3, height: '100%' }}>
             <Typography variant="h6">Credit usage</Typography>
             <Typography sx={{ mt: 0.5, color: 'text.secondary', fontSize: 14 }}>
-              Daily credit burn from the ledger.
+              Daily plan-usage burn from the ledger.
             </Typography>
             {trendPoints.length === 0 ? (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                No credit usage recorded yet.
+                No usage recorded yet.
               </Typography>
             ) : (
               <Box sx={{ width: '100%', overflowX: 'auto', mt: 1.5 }}>
@@ -457,7 +457,7 @@ export default function DashboardPage() {
             <Grid container spacing={1.5} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, md: 3 }}>
                 <Paper sx={{ p: 2, borderRadius: 2, bgcolor: 'rgba(14, 165, 233, 0.08)' }}>
-                  <Typography variant="caption" color="text.secondary">Credits used</Typography>
+                  <Typography variant="caption" color="text.secondary">Messages used</Typography>
                   <Typography variant="h5" sx={{ mt: 0.5 }}>
                     {usage ? usage.credits.used.toLocaleString() : '–'}
                   </Typography>
@@ -465,7 +465,7 @@ export default function DashboardPage() {
               </Grid>
               <Grid size={{ xs: 12, md: 3 }}>
                 <Paper sx={{ p: 2, borderRadius: 2, bgcolor: 'rgba(34, 197, 94, 0.08)' }}>
-                  <Typography variant="caption" color="text.secondary">Credits remaining</Typography>
+                  <Typography variant="caption" color="text.secondary">Messages remaining</Typography>
                   <Typography variant="h5" sx={{ mt: 0.5 }}>
                     {creditsRemainingLabel}
                   </Typography>

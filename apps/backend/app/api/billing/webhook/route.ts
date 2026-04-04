@@ -20,8 +20,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { constructWebhookEvent, syncStripeSubscription, cancelSubscription } from '@/lib/billing';
-import { getDb } from '@gcfis/db/client';
-import { businesses } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { businesses } from '@pnpbrain/db/schema';
 import { eq, sql } from 'drizzle-orm';
 
 export const runtime = 'nodejs';

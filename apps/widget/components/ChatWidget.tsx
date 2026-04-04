@@ -3,13 +3,13 @@
 /**
  * ChatWidget — the core embeddable chat component.
  *
- * Self-contained: no shared UI library, imports only from @gcfis/types.
+ * Self-contained: no shared UI library, imports only from @pnpbrain/types.
  * Communicates with the PNPBrain backend via streaming SSE fetch.
  */
 
 import { Fragment, useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import type { WidgetConfig, StreamEvent } from '@gcfis/types';
-import { createChatClient } from '@gcfis/web-sdk';
+import type { WidgetConfig, StreamEvent } from '@pnpbrain/types';
+import { createChatClient } from '@pnpbrain/web-sdk';
 
 const TOOL_LABELS: Record<string, string> = {
   calculator: 'doing a quick calculation',

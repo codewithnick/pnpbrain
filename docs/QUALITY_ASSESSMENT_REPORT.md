@@ -351,8 +351,8 @@ This demonstrates:
 ## 9. Configuration Files Created
 
 ### Documentation Files
-- ✅ [COMPANY_INFO.md](/Users/nikhil/Desktop/GCFIS/docs/COMPANY_INFO.md) - Complete company overview
-- ✅ [PRODUCT_SPECS.md](/Users/nikhil/Desktop/GCFIS/docs/PRODUCT_SPECS.md) - Detailed product specifications
+- ✅ [COMPANY_INFO.md](/Users/nikhil/Desktop/PNPBRAIN/docs/COMPANY_INFO.md) - Complete company overview
+- ✅ [PRODUCT_SPECS.md](/Users/nikhil/Desktop/PNPBRAIN/docs/PRODUCT_SPECS.md) - Detailed product specifications
 
 ### Active Integrations
 ```json

@@ -1,5 +1,5 @@
-import { getDb } from '@gcfis/db/client';
-import { supportTickets } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { supportTickets } from '@pnpbrain/db/schema';
 import { getSupportIntegrationForAgentScope } from './businessSkills';
 
 export interface CreateSupportTicketInput {
@@ -60,7 +60,7 @@ async function createZendeskTicket(args: {
                 ...(args.customerEmail ? { email: args.customerEmail } : {}),
               }
             : undefined,
-        tags: ['gcfis', 'agent_escalation'],
+        tags: ['pnpbrain', 'agent_escalation'],
       },
     }),
   });
@@ -111,7 +111,7 @@ async function createFreshdeskTicket(args: {
       status: 2,   // Open
       ...(args.customerEmail ? { email: args.customerEmail } : {}),
       ...(args.customerName ? { name: args.customerName } : {}),
-      tags: ['gcfis', 'agent_escalation'],
+      tags: ['pnpbrain', 'agent_escalation'],
     }),
   });
 
@@ -170,7 +170,7 @@ async function createJiraTicket(args: {
           ],
         },
         issuetype: { name: args.issueType },
-        labels: ['gcfis', 'agent_escalation'],
+        labels: ['pnpbrain', 'agent_escalation'],
       },
     }),
   });

@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/client';
 
 let supabaseClient: SupabaseClient | null = null;
-const SELECTED_AGENT_STORAGE_KEY = 'gcfis.selected-agent-id';
+const SELECTED_AGENT_STORAGE_KEY = 'pnpbrain.selected-agent-id';
 
 const AGENT_SCOPED_API_PREFIXES = [
   '/api/business/me',

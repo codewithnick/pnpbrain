@@ -9,13 +9,13 @@
  * 3. Capturing and displaying tool usage
  */
 
-import { graphql } from '@gcfis/agent/graph';
+import { graphql } from '@pnpbrain/agent/graph';
 import { 
   calculatorTool, 
   datetimeTool, 
   leadQualificationTool,
   meetingSchedulerTool 
-} from '@gcfis/tools';
+} from '@pnpbrain/tools';
 
 async function testSkillUsage() {
   console.log('╔════════════════════════════════════════════════════════════════╗');

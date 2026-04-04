@@ -1,8 +1,8 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
-import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
-import { MemoryService } from '@gcfis/agent/memory';
-import { chunkText, getEmbeddingModel, normalizeEmbeddingVector } from '@gcfis/agent/rag';
+import { getDb } from '@pnpbrain/db/client';
+import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@pnpbrain/db/schema';
+import { MemoryService } from '@pnpbrain/agent/memory';
+import { chunkText, getEmbeddingModel, normalizeEmbeddingVector } from '@pnpbrain/agent/rag';
 
 type CrawledPage = {
   url: string;
@@ -198,7 +198,7 @@ async function getRobotsRulesForOrigin(origin: string, timeoutMs: number): Promi
     }
 
     const content = await response.text();
-    const parsedRules = parseRobotsTxt(content, 'gcfis-crawlworker');
+    const parsedRules = parseRobotsTxt(content, 'pnpbrain-crawlworker');
     robotsCache.set(origin, parsedRules);
     return parsedRules;
   } catch {
@@ -292,7 +292,7 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
     return await fetch(url, {
       method: 'GET',
       headers: {
-        'User-Agent': 'GCFIS-CrawlWorker/1.0',
+        'User-Agent': 'PNPBRAIN-CrawlWorker/1.0',
       },
       signal: controller.signal,
     });

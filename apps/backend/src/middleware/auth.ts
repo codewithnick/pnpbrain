@@ -1,8 +1,8 @@
 import type { Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { and, eq } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
-import { businesses, businessMembers, ROLE_RANK, type BusinessMemberRole } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { businesses, businessMembers, ROLE_RANK, type BusinessMemberRole } from '@pnpbrain/db/schema';
 
 interface AuthResult {
   userId: string;

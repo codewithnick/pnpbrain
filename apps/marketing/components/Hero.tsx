@@ -61,7 +61,7 @@ export default function Hero() {
         </Typography>
 
         <Typography sx={{ mt: 3, fontSize: { xs: '1rem', md: '1.2rem' }, color: 'text.secondary' }}>
-          PNPBrain embeds a RAG-powered AI chat widget on your website in minutes. It learns from your knowledge base,
+          PNPBrain embeds a RAG-powered AI assistant on your website, app, or channel in minutes. It learns from your knowledge base,
           remembers customers, and handles questions 24/7.
         </Typography>
 

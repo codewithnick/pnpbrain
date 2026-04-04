@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import type { Business } from '@gcfis/db';
-import { getDb } from '@gcfis/db/client';
-import { agents, businesses } from '@gcfis/db/schema';
+import type { Business } from '@pnpbrain/db';
+import { getDb } from '@pnpbrain/db/client';
+import { agents, businesses } from '@pnpbrain/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { requireBusinessAuth } from '../middleware/auth';
 import { generateAgentApiKey, resolveAgentForBusiness } from '../lib/agents';

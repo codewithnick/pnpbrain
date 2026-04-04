@@ -1,9 +1,9 @@
 /**
- * Build script for the standalone embed bundle (gcfis-widget.js).
+ * Build script for the standalone embed bundle (pnpbrain-widget.js).
  *
  * Run: pnpm --filter widget build:embed
  *
- * Output: apps/widget/dist/gcfis-widget.js
+ * Output: apps/widget/dist/pnpbrain-widget.js
  *
  * This uses esbuild to produce a self-contained IIFE bundle that can be
  * hosted on a CDN and dropped into any HTML page via a <script> tag.
@@ -18,9 +18,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 await esbuild.build({
   entryPoints: [path.join(__dirname, '../embed.tsx')],
   bundle: true,
-  outfile: path.join(__dirname, '../dist/gcfis-widget.js'),
+  outfile: path.join(__dirname, '../dist/pnpbrain-widget.js'),
   format: 'iife',
-  globalName: 'GCFISWidget',
+  globalName: 'PNPBRAINWidget',
   platform: 'browser',
   target: ['es2020', 'chrome80', 'firefox80', 'safari14'],
   minify: true,
@@ -37,4 +37,4 @@ await esbuild.build({
   },
 });
 
-console.log('✅ PNpbrain widget embed bundle built to dist/gcfis-widget.js');
+console.log('✅ PNpbrain widget embed bundle built to dist/pnpbrain-widget.js');

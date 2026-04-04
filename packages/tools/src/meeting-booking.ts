@@ -168,7 +168,7 @@ export function createMeetingBookingTool({
               attendees: [{ email: customerEmail, displayName: customerName }],
               conferenceData: {
                 createRequest: {
-                  requestId: `gcfis-${Date.now()}`,
+                  requestId: `pnpbrain-${Date.now()}`,
                   conferenceSolutionKey: { type: 'hangoutsMeet' },
                 },
               },

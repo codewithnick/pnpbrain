@@ -11,6 +11,7 @@ Enable customers to use the PNpbrain agent backend with any frontend stack while
 | Hosted public chat page | Shareable support/sales chat URL | WebSocket with SSE fallback | `publicToken` | Available |
 | Custom web app (REST stream) | Next.js/React/Vue/Svelte/Angular teams that prefer HTTP streaming | SSE (`POST /api/agent/chat`) | `publicToken` or `x-api-key` | Available |
 | Custom web app (WebSocket) | Real-time rich UIs | WebSocket (`/ws/agent`) | `publicToken` or `x-api-key` | Available |
+| Native channel bot | Telegram, WhatsApp, Slack, Discord, Teams | Webhook + API forwarding | `x-api-key` on server | Available |
 | IDE/automation tools | Developer tooling and workflows | MCP (`POST /mcp`) | `x-api-key` | Available |
 | CMS plugin | WordPress users | Script/widget integration | `publicToken` | Available |
 | Native mobile SDK | iOS/Android apps | HTTP/WebSocket | `publicToken` (public), scoped keys for privileged flows | Planned |
@@ -29,11 +30,11 @@ Enable customers to use the PNpbrain agent backend with any frontend stack while
 - Add versioned transport documentation with migration notes.
 
 ### Phase 3: SDK Layer
-- Build `@gcfis/web-sdk`:
+- Build `@pnpbrain/web-sdk`:
   - `createChatClient({ backendUrl, publicToken, agentId? })`
   - auto-select transport (WebSocket -> SSE)
   - stream callbacks and reconnection helpers
-- Build `@gcfis/server-sdk`:
+- Build `@pnpbrain/server-sdk`:
   - secure key-based calls for backend workflows
   - strict typed APIs for chat + conversation history
 
@@ -44,12 +45,18 @@ Enable customers to use the PNpbrain agent backend with any frontend stack while
 - SvelteKit starter.
 - Angular starter.
 - React Native starter.
+- Telegram bot starter.
+- WhatsApp webhook starter.
+- Slack app starter.
+- Discord bot starter.
+- Teams bot starter.
 
 ### Phase 5: Partner Integrations
 - Shopify app extension.
 - Webflow script installer.
 - Wix embed helper.
 - Zapier/Make action for "Send to PNpbrain agent".
+- Email inbound/outbound connector.
 
 ## Integration Product Requirements
 
@@ -84,3 +91,4 @@ Enable customers to use the PNpbrain agent backend with any frontend stack while
   - MCP/API key for tooling.
 - All options share the same agent behavior and conversation continuity.
 - First-party examples exist for at least 4 major frontend frameworks.
+- First-party examples also exist for at least 4 messaging channels.

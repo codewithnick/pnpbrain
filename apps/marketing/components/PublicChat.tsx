@@ -9,8 +9,8 @@
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { StreamEvent } from '@gcfis/types';
-import { createChatClient } from '@gcfis/web-sdk';
+import type { StreamEvent } from '@pnpbrain/types';
+import { createChatClient } from '@pnpbrain/web-sdk';
 
 const TOOL_LABELS: Record<string, string> = {
   calculator: 'doing a quick calculation',

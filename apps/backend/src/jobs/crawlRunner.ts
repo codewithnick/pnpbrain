@@ -1,9 +1,9 @@
 import FirecrawlApp from '@mendable/firecrawl-js';
 import { and, eq, isNull } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
-import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@gcfis/db/schema';
-import { MemoryService } from '@gcfis/agent/memory';
-import { chunkText, getEmbeddingModel, normalizeEmbeddingVector } from '@gcfis/agent/rag';
+import { getDb } from '@pnpbrain/db/client';
+import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@pnpbrain/db/schema';
+import { MemoryService } from '@pnpbrain/agent/memory';
+import { chunkText, getEmbeddingModel, normalizeEmbeddingVector } from '@pnpbrain/agent/rag';
 
 function buildCrawlMemoryFacts(urls: string[], ingestedPages: number, titles: string[]): string[] {
   const hosts = Array.from(

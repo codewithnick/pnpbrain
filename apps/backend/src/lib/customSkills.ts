@@ -1,5 +1,5 @@
-import { getDb } from '@gcfis/db/client';
-import { agents, customAgentSkills } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { agents, customAgentSkills } from '@pnpbrain/db/schema';
 import { and, asc, eq, sql } from 'drizzle-orm';
 
 export interface CustomWebhookSkillRuntime {

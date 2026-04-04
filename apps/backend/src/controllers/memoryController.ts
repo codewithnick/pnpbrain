@@ -1,4 +1,4 @@
-import { MemoryService } from '@gcfis/agent/memory';
+import { MemoryService } from '@pnpbrain/agent/memory';
 import { Request, Response } from 'express';
 import { requireBusinessAuth } from '../middleware/auth';
 import { resolveAgentForBusiness } from '../lib/agents';

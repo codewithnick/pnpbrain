@@ -96,16 +96,16 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.893.0
         version: 3.1021.0
-      '@gcfis/agent':
+      '@pnpbrain/agent':
         specifier: workspace:*
         version: link:../../packages/agent
-      '@gcfis/db':
+      '@pnpbrain/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@gcfis/tools':
+      '@pnpbrain/tools':
         specifier: workspace:*
         version: link:../../packages/tools
-      '@gcfis/types':
+      '@pnpbrain/types':
         specifier: workspace:*
         version: link:../../packages/types
       '@langchain/core':
@@ -202,10 +202,10 @@ importers:
 
   apps/crawl-worker:
     dependencies:
-      '@gcfis/agent':
+      '@pnpbrain/agent':
         specifier: workspace:*
         version: link:../../packages/agent
-      '@gcfis/db':
+      '@pnpbrain/db':
         specifier: workspace:*
         version: link:../../packages/db
       bullmq:
@@ -242,10 +242,10 @@ importers:
       '@emotion/styled':
         specifier: ^11.14.1
         version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(@types/react@19.2.14)(react@19.2.4)
-      '@gcfis/types':
+      '@pnpbrain/types':
         specifier: workspace:*
         version: link:../../packages/types
-      '@gcfis/web-sdk':
+      '@pnpbrain/web-sdk':
         specifier: workspace:*
         version: link:../../packages/web-sdk
       '@mui/icons-material':
@@ -291,10 +291,10 @@ importers:
 
   apps/widget:
     dependencies:
-      '@gcfis/types':
+      '@pnpbrain/types':
         specifier: workspace:*
         version: link:../../packages/types
-      '@gcfis/web-sdk':
+      '@pnpbrain/web-sdk':
         specifier: workspace:*
         version: link:../../packages/web-sdk
       next:
@@ -339,13 +339,13 @@ importers:
 
   packages/agent:
     dependencies:
-      '@gcfis/db':
+      '@pnpbrain/db':
         specifier: workspace:*
         version: link:../db
-      '@gcfis/tools':
+      '@pnpbrain/tools':
         specifier: workspace:*
         version: link:../tools
-      '@gcfis/types':
+      '@pnpbrain/types':
         specifier: workspace:*
         version: link:../types
       '@langchain/anthropic':
@@ -385,7 +385,7 @@ importers:
 
   packages/db:
     dependencies:
-      '@gcfis/types':
+      '@pnpbrain/types':
         specifier: workspace:*
         version: link:../types
       '@supabase/supabase-js':
@@ -410,10 +410,10 @@ importers:
 
   packages/tools:
     dependencies:
-      '@gcfis/db':
+      '@pnpbrain/db':
         specifier: workspace:*
         version: link:../db
-      '@gcfis/types':
+      '@pnpbrain/types':
         specifier: workspace:*
         version: link:../types
       '@langchain/core':
@@ -450,7 +450,7 @@ importers:
 
   packages/web-sdk:
     dependencies:
-      '@gcfis/types':
+      '@pnpbrain/types':
         specifier: workspace:*
         version: link:../types
     devDependencies:

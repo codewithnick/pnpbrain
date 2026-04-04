@@ -9,6 +9,15 @@
 import { useEffect, useState } from 'react';
 import { fetchBackend } from '@/lib/supabase';
 
+type PlanTier = 'freemium' | 'lite' | 'basic' | 'pro' | 'custom';
+
+type PlanCatalogItem = {
+  tier: PlanTier;
+  label: string;
+  monthlyMessages: number | null;
+  requiresSupport: boolean;
+};
+
 type BillingStatus = {
   status: 'trialing' | 'active' | 'past_due' | 'canceled';
   isActive: boolean;
@@ -16,6 +25,10 @@ type BillingStatus = {
   trialExpired: boolean;
   trialEndsAt: string;
   trialDaysRemaining: number;
+  planTier: PlanTier;
+  planLabel: string;
+  monthlyMessageLimit: number | null;
+  planCatalog: PlanCatalogItem[];
   currentPeriodEnd: string | null;
   messagesUsedTotal: number;
   creditBalance: number;
@@ -37,6 +50,14 @@ export default function BillingPage() {
   const [flashMessage, setFlashMessage] = useState('');
   const [topUpCredits, setTopUpCredits] = useState('100');
   const [topUpMedium, setTopUpMedium] = useState<TopUpMedium>('any');
+  const [selectedPlan, setSelectedPlan] = useState<PlanTier>('freemium');
+
+  let topUpActionLabel = 'Continue to checkout';
+  if (actionLoading) {
+    topUpActionLabel = topUpMedium === 'manual' ? 'Adding…' : 'Opening…';
+  } else if (topUpMedium === 'manual') {
+    topUpActionLabel = 'Add usage now';
+  }
 
   async function loadBilling() {
     const res = await fetchBackend('/api/billing/status');
@@ -48,6 +69,7 @@ export default function BillingPage() {
 
     const json = (await res.json()) as { ok: boolean; data: BillingStatus };
     setBilling(json.data);
+    setSelectedPlan(json.data.planTier);
     setLoading(false);
   }
 
@@ -89,12 +111,49 @@ export default function BillingPage() {
           return;
         }
 
-        window.location.href = checkoutUrl;
+        globalThis.location.href = checkoutUrl;
         return;
       }
 
       setFlashMessage(`${amount.toLocaleString()} credits added to this business.`);
       await loadBilling();
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handlePlanCheckout() {
+    if (!billing) return;
+
+    setActionLoading(true);
+    setError('');
+    try {
+      if (selectedPlan === 'freemium') {
+        setFlashMessage('Freemium is active by default. No checkout required.');
+        setActionLoading(false);
+        return;
+      }
+
+      if (selectedPlan === 'custom') {
+        globalThis.location.href = 'mailto:support@pnpbrain.com?subject=Custom%20Plan%20Setup';
+        return;
+      }
+
+      const res = await fetchBackend('/api/billing/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ planTier: selectedPlan }),
+      });
+
+      const json = (await res.json()) as { ok: boolean; error?: string; url?: string };
+      if (!res.ok || !json.url) {
+        setError(json.error ?? 'Failed to start plan checkout.');
+        return;
+      }
+
+      globalThis.location.href = json.url;
     } finally {
       setActionLoading(false);
     }
@@ -112,10 +171,27 @@ export default function BillingPage() {
     );
   }
 
-  const walletStatusLabel = billing.creditBalance > 0 ? 'Credits Available' : 'Out of Credits';
+  const walletStatusLabel = billing.creditBalance > 0 ? 'Usage Available' : 'Limit Reached';
   const walletStatusColor = billing.creditBalance > 0
     ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300'
     : 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300';
+
+  const monthlyLimitLabel = billing.monthlyMessageLimit === null
+    ? 'Unlimited'
+    : billing.monthlyMessageLimit.toLocaleString();
+
+  const planHelpText = (() => {
+    if (selectedPlan === 'freemium') return 'Freemium is self-serve and activated automatically.';
+    if (selectedPlan === 'custom') return 'Custom plans are provisioned by support.';
+    return 'Paid plans are activated through secure checkout.';
+  })();
+
+  const planActionLabel = (() => {
+    if (actionLoading) return 'Opening…';
+    if (selectedPlan === 'freemium') return 'Activate Freemium';
+    if (selectedPlan === 'custom') return 'Contact support for Custom';
+    return `Checkout ${selectedPlan.charAt(0).toUpperCase()}${selectedPlan.slice(1)}`;
+  })();
 
   return (
     <div className="space-y-6 max-w-xl">
@@ -133,7 +209,7 @@ export default function BillingPage() {
       {/* Status card */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Credit wallet</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Plan and usage wallet</h2>
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${walletStatusColor}`}
           >
@@ -143,37 +219,37 @@ export default function BillingPage() {
 
         <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 dark:bg-blue-950/30 dark:border-blue-900/50">
           <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
-            Every new business starts with {billing.signupCreditsGranted.toLocaleString()} free credits.
+            Current plan: {billing.planLabel}
           </p>
           <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-            Credits are shared across all users and all agents inside this business.
+            Monthly included messages: {monthlyLimitLabel}. Shared across all users and all agents.
           </p>
         </div>
 
         {billing.creditBalance <= 0 && (
           <div className="rounded-xl bg-red-50 border border-red-100 p-4 dark:bg-red-950/30 dark:border-red-900/50">
-            <p className="text-sm font-medium text-red-800 dark:text-red-300">This business is out of credits.</p>
+            <p className="text-sm font-medium text-red-800 dark:text-red-300">This business has hit its monthly usage cap.</p>
             <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-              Chat and MCP requests are blocked until credits are topped up.
+              Chat and MCP requests are blocked until you upgrade or add usage packs.
             </p>
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
-            <p className="text-xs text-gray-500 dark:text-slate-400">Current balance</p>
+            <p className="text-xs text-gray-500 dark:text-slate-400">Remaining this cycle</p>
             <span className="font-medium text-gray-900 dark:text-slate-100">
               {billing.creditBalance.toLocaleString()}
             </span>
           </div>
           <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
-            <p className="text-xs text-gray-500 dark:text-slate-400">Purchased credits</p>
+            <p className="text-xs text-gray-500 dark:text-slate-400">Usage packs purchased</p>
             <span className="font-medium text-gray-900 dark:text-slate-100">
               {billing.creditsPurchasedTotal.toLocaleString()}
             </span>
           </div>
           <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
-            <p className="text-xs text-gray-500 dark:text-slate-400">Credits used</p>
+            <p className="text-xs text-gray-500 dark:text-slate-400">Messages used</p>
             <span className="font-medium text-gray-900 dark:text-slate-100">
               {billing.creditsUsedTotal.toLocaleString()}
             </span>
@@ -191,17 +267,17 @@ export default function BillingPage() {
           </span>
         </div>
         <p className="text-xs text-gray-400 dark:text-slate-500">
-          Each successful AI interaction debits business credits at the organization level.
+          Each successful AI interaction consumes one message from the active plan allowance.
         </p>
         <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
           <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
-            <p className="text-xs text-gray-500 dark:text-slate-400">Included API credits</p>
+            <p className="text-xs text-gray-500 dark:text-slate-400">Included monthly messages</p>
             <p className="mt-1 text-base font-semibold text-gray-900 dark:text-slate-100">
               {billing.includedApiCredits === null ? 'Unlimited' : billing.includedApiCredits.toLocaleString()}
             </p>
           </div>
           <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
-            <p className="text-xs text-gray-500 dark:text-slate-400">Remaining API credits</p>
+            <p className="text-xs text-gray-500 dark:text-slate-400">Remaining messages</p>
             <p className="mt-1 text-base font-semibold text-gray-900 dark:text-slate-100">
               {billing.remainingApiCredits === null ? 'Unlimited' : billing.remainingApiCredits.toLocaleString()}
             </p>
@@ -209,17 +285,46 @@ export default function BillingPage() {
         </div>
       </div>
 
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4 dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Choose plan</h2>
+        <div className="space-y-2">
+          <label htmlFor="plan-tier-select" className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">
+            Available plans
+          </label>
+          <select
+            id="plan-tier-select"
+            value={selectedPlan}
+            onChange={(event) => setSelectedPlan(event.target.value as PlanTier)}
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+          >
+            {billing.planCatalog.map((plan) => (
+              <option key={plan.tier} value={plan.tier}>
+                {plan.label} - {plan.monthlyMessages === null ? 'Unlimited messages' : `${plan.monthlyMessages.toLocaleString()} messages/month`}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="text-xs text-gray-400 dark:text-slate-500">{planHelpText}</p>
+        <button
+          onClick={handlePlanCheckout}
+          disabled={actionLoading}
+          className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-60 transition-colors"
+        >
+          {planActionLabel}
+        </button>
+      </div>
+
       {/* Pricing info */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-3 dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Credit model</h2>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Pricing model</h2>
         <ul className="space-y-2 text-sm text-gray-600 dark:text-slate-300">
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
-            <span>{billing.signupCreditsGranted.toLocaleString()} free credits on signup</span>
+            <span>Freemium, Lite, Basic, Pro, and Custom plans are available</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
-            <span>Credits are shared across the business, not per user or per agent</span>
+            <span>Monthly message allowances are shared across the business</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
@@ -227,18 +332,19 @@ export default function BillingPage() {
           </li>
           <li className="flex items-start gap-2">
             <span className="text-green-500 mt-0.5">✓</span>
-            <span>Top up credits whenever the organization balance gets low</span>
+            <span>Optional usage packs are available for rare spikes</span>
           </li>
         </ul>
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4 dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Top up credits</h2>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Add usage pack</h2>
         <div className="space-y-2">
-          <label className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">
+          <label htmlFor="top-up-medium" className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">
             Refill medium
           </label>
           <select
+            id="top-up-medium"
             value={topUpMedium}
             onChange={(event) => setTopUpMedium(event.target.value as TopUpMedium)}
             className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
@@ -253,30 +359,25 @@ export default function BillingPage() {
         </div>
         <div className="flex gap-3">
           <input
+            id="top-up-credits"
             type="number"
             min={1}
             step={1}
             value={topUpCredits}
             onChange={(event) => setTopUpCredits(event.target.value)}
             className="flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            placeholder="Credits to add"
+            placeholder="Messages to add"
           />
           <button
             onClick={handleTopUp}
             disabled={actionLoading}
             className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-60 transition-colors"
           >
-            {actionLoading
-              ? topUpMedium === 'manual'
-                ? 'Adding…'
-                : 'Opening…'
-              : topUpMedium === 'manual'
-                ? 'Add credits now'
-                : 'Continue to checkout'}
+            {topUpActionLabel}
           </button>
         </div>
         <p className="text-xs text-gray-400 dark:text-slate-500">
-          Manual refill applies credits instantly. Online mediums create a secure Stripe checkout and add credits after payment succeeds.
+          Manual refill applies usage instantly. Online mediums create a secure Stripe checkout and add usage after payment succeeds.
         </p>
       </div>
     </div>

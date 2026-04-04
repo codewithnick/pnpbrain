@@ -169,19 +169,19 @@ MCP Endpoint:
 ### Check Agent Status
 ```bash
 # List available skills
-mcp_gcfisagent_list_skills
+mcp_pnpbrainagent_list_skills
 
 # List active integrations
-mcp_gcfisagent_list_integrations
+mcp_pnpbrainagent_list_integrations
 
 # View recent conversations
-mcp_gcfisagent_list_conversations --limit 10
+mcp_pnpbrainagent_list_conversations --limit 10
 ```
 
 ### Test Agent Knowledge
 ```bash
 # Send test message
-mcp_gcfisagent_chat --message "What's the Pro tier pricing?"
+mcp_pnpbrainagent_chat --message "What's the Pro tier pricing?"
 
 # Expected Response: "$149/month with 10K messages and unlimited docs"
 ```

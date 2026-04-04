@@ -5,14 +5,14 @@
 
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import { runGraph } from '@gcfis/agent/graph';
-import { extractAndSaveMemory } from '@gcfis/agent/memory';
-import { getDb } from '@gcfis/db/client';
-import { conversations, messages } from '@gcfis/db/schema';
+import { runGraph } from '@pnpbrain/agent/graph';
+import { extractAndSaveMemory } from '@pnpbrain/agent/memory';
+import { getDb } from '@pnpbrain/db/client';
+import { conversations, messages } from '@pnpbrain/db/schema';
 import { asc, eq } from 'drizzle-orm';
-import type { Agent, Business } from '@gcfis/db';
-import type { GraphInput } from '@gcfis/agent/graph';
-import type { StreamEvent } from '@gcfis/types';
+import type { Agent, Business } from '@pnpbrain/db';
+import type { GraphInput } from '@pnpbrain/agent/graph';
+import type { StreamEvent } from '@pnpbrain/types';
 import { sendBadRequest } from '../utils/response';
 import {
   getAgentByApiKey,
@@ -30,7 +30,7 @@ import {
   getSupportIntegrationForAgentScope,
 } from '../lib/businessSkills';
 import { getEnabledCustomWebhookSkillsForAgentScope } from '../lib/customSkills';
-import { isBusinessActive, recordMessageUsage } from '../lib/billing';
+import { isBusinessActive, recordMessageUsage, refreshBusinessUsageCycleIfNeeded } from '../lib/billing';
 import { shouldEscalateResponse } from '../lib/escalation';
 import { createSupportTicket } from '../lib/supportTickets';
 import { createLeadHandoff } from '../lib/leadHandoffs';
@@ -196,13 +196,14 @@ export class ChatController {
           : 'publicToken or a valid agent API key is required when the backend cannot infer business scope. If no default agent exists, pass agentId explicitly.'
       );
     }
-    const { business, agent, apiKeyMatched } = runtime;
+    const { business: runtimeBusiness, agent, apiKeyMatched } = runtime;
+    const business = await refreshBusinessUsageCycleIfNeeded(runtimeBusiness);
 
     // Billing gate
     if (!isBusinessActive(business)) {
       return res.status(402).json({
         ok: false,
-        error: 'This business has no remaining credits. Top up credits to continue using PNpbrain.',
+        error: 'This business has reached its monthly plan usage limit. Upgrade or add a usage pack to continue.',
         code: 'INSUFFICIENT_CREDITS',
       });
     }

@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { getDb } from '@gcfis/db/client';
-import { agents } from '@gcfis/db/schema';
-import type { Agent } from '@gcfis/db';
+import { getDb } from '@pnpbrain/db/client';
+import { agents } from '@pnpbrain/db/schema';
+import type { Agent } from '@pnpbrain/db';
 import { and, eq, sql } from 'drizzle-orm';
 
 export function generateAgentApiKey(): string {
-  return `gcfis_live_${randomBytes(24).toString('base64url')}`;
+  return `pnpbrain_live_${randomBytes(24).toString('base64url')}`;
 }
 
 export async function getAgentById(agentId: string): Promise<Agent | null> {
@@ -20,7 +20,7 @@ export async function getAgentById(agentId: string): Promise<Agent | null> {
 }
 
 export async function getAgentByApiKey(apiKey: string): Promise<Agent | null> {
-  if (!apiKey || !apiKey.startsWith('gcfis_live_')) return null;
+  if (!apiKey || !apiKey.startsWith('pnpbrain_live_')) return null;
 
   const db = getDb();
   const [agent] = await db

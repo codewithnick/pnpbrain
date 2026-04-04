@@ -2,11 +2,21 @@
 
 This guide shows how to connect any frontend to PNpbrain while keeping the same backend agent logic.
 
+For a broader plug-and-play matrix that includes messaging channels and backend languages, see [PLUG_AND_PLAY_SOLUTIONS.md](PLUG_AND_PLAY_SOLUTIONS.md).
+
 ## Supported Transports
 
 - WebSocket endpoint: /ws/agent
 - SSE endpoint: POST /api/agent/chat
-- Shared browser SDK: @gcfis/web-sdk (auto WebSocket fallback to SSE)
+- Shared browser SDK: @pnpbrain/web-sdk (auto WebSocket fallback to SSE)
+
+## Quick Decision Guide
+
+- Use the widget or hosted chat page when you want the fastest launch.
+- Use the browser SDK when you need a custom frontend.
+- Use the SSE endpoint when your network blocks WebSockets.
+- Use the WebSocket endpoint when you need lower latency or live typing feedback.
+- Use `x-api-key` only from trusted server-side code.
 
 ## Auth Models
 
@@ -17,12 +27,12 @@ This guide shows how to connect any frontend to PNpbrain while keeping the same 
 
 Install:
 
-- pnpm add @gcfis/web-sdk
+- pnpm add @pnpbrain/web-sdk
 
 Create client:
 
 ```ts
-import { createChatClient } from '@gcfis/web-sdk';
+import { createChatClient } from '@pnpbrain/web-sdk';
 
 const chatClient = createChatClient({
   backendUrl: 'https://api.your-domain.com',
@@ -145,7 +155,7 @@ async function send(message: string) {
 ## Plain JavaScript (No Framework)
 
 ```js
-import { createChatClient } from '@gcfis/web-sdk';
+import { createChatClient } from '@pnpbrain/web-sdk';
 
 const client = createChatClient({
   backendUrl: 'https://api.your-domain.com',

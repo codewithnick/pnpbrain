@@ -17,7 +17,7 @@ import {
 } from '@mui/material';
 
 const scriptSnippet = `<script
-  src="https://cdn.pnpbrain.com/widget/gcfis-widget.js"
+  src="https://cdn.pnpbrain.com/widget/pnpbrain-widget.js"
   data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
   data-backend-url="https://api.your-domain.com"
   data-bot-name="Support Assistant"
@@ -38,7 +38,7 @@ const scriptSnippet = `<script
 ></script>`;
 
 const mountNodeSnippet = `<div
-  data-gcfis-mount="1"
+  data-pnpbrain-mount="1"
   data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
   data-backend-url="https://api.your-domain.com"
   data-bot-name="Support Assistant"
@@ -48,12 +48,12 @@ const mountNodeSnippet = `<div
   data-show-user-avatar="true"
   data-position="bottom-right"
 ></div>
-<script src="https://cdn.pnpbrain.com/widget/gcfis-widget.js"></script>`;
+<script src="https://cdn.pnpbrain.com/widget/pnpbrain-widget.js"></script>`;
 
-const wordpressSnippet = `1. Upload and activate the GCFIS WordPress plugin.
-2. Go to Settings -> GCFIS Widget.
+const wordpressSnippet = `1. Upload and activate the PNPBRAIN WordPress plugin.
+2. Go to Settings -> PNPBRAIN Widget.
 3. Add your Backend URL and Public Token.
-4. Enable auto-inject or place [gcfis_widget] on any page.`;
+4. Enable auto-inject or place [pnpbrain_widget] on any page.`;
 
 const embeddableOptions = [
   'data-placeholder',

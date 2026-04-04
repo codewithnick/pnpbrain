@@ -1,7 +1,7 @@
 /**
- * GCFIS MCP Server
+ * PNPBRAIN MCP Server
  *
- * Exposes the GCFIS agent, conversations, and knowledge base as MCP tools
+ * Exposes the PNPBRAIN agent, conversations, and knowledge base as MCP tools
  * so any MCP-compatible client (Claude Desktop, Cursor, Copilot, etc.) can
  * integrate with a business's AI assistant using its API key.
  *
@@ -22,17 +22,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
+import { getDb } from '@pnpbrain/db/client';
 import {
   conversations,
   firecrawlJobs,
   knowledgeDocuments,
   messages,
   SKILL_NAMES,
-} from '@gcfis/db/schema';
-import type { Agent, Business } from '@gcfis/db';
-import { runGraph } from '@gcfis/agent/graph';
-import { extractAndSaveMemory } from '@gcfis/agent/memory';
+} from '@pnpbrain/db/schema';
+import type { Agent, Business } from '@pnpbrain/db';
+import { runGraph } from '@pnpbrain/agent/graph';
+import { extractAndSaveMemory } from '@pnpbrain/agent/memory';
 import { parseAllowedDomains } from '../lib/business';
 import {
   disconnectIntegrationForAgent,
@@ -164,7 +164,7 @@ function getCrawlErrorHint(errorMessage: string | null): string | null {
 export function createMcpServer(input: { business: Business; agent: Agent }): McpServer {
   const { business, agent } = input;
   const server = new McpServer({
-    name: 'gcfis-agent',
+    name: 'pnpbrain-agent',
     version: '1.0.0',
   });
 
@@ -1039,7 +1039,7 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
   // ── Resource: business config ───────────────────────────────────────────────
   server.resource(
     'business://config',
-    'gcfis://business/config',
+    'pnpbrain://business/config',
     { mimeType: 'application/json' },
     async () => {
       const config = await buildBusinessConfig();
@@ -1047,7 +1047,7 @@ export function createMcpServer(input: { business: Business; agent: Agent }): Mc
       return {
         contents: [
           {
-            uri: 'gcfis://business/config',
+            uri: 'pnpbrain://business/config',
             mimeType: 'application/json',
             text: JSON.stringify(config, null, 2),
           },

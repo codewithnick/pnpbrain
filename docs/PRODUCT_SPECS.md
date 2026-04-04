@@ -55,6 +55,26 @@
 - Subscriber data sync
 
 ### Communication
+**Telegram**
+- Bot replies and thread continuation
+- Webhook-based message delivery
+- Rich message formatting
+
+**Slack**
+- Channel and DM responses
+- Slash command support
+- Thread-aware replies
+
+**Discord**
+- Bot messages and slash commands
+- Channel response routing
+- Thread and guild context
+
+**Microsoft Teams**
+- Bot framework integration
+- Channel messages and adaptive replies
+- Enterprise collaboration support
+
 **WhatsApp Business API**
 - Send messages to customers
 - Receive incoming messages

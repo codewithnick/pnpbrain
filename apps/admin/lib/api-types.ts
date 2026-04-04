@@ -64,7 +64,9 @@ export interface DashboardUsage {
     included: number | null;
     remaining: number | null;
     percentUsed: number | null;
-    unit: 'credit';
+    unit: 'message';
+    planTier: 'freemium' | 'lite' | 'basic' | 'pro' | 'custom';
+    planLabel: string;
   };
   totals: {
     conversations: number;

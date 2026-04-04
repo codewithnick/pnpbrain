@@ -42,7 +42,7 @@ import {
   createSupportTicketTool,
   createLeadHandoffTool,
   type CustomWebhookSkillDefinition,
-} from '@gcfis/tools';
+} from '@pnpbrain/tools';
 
 interface MeetingIntegrationConfig {
   provider: string;

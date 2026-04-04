@@ -8,7 +8,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
+import { getDb } from '@pnpbrain/db/client';
 import {
   businessMembers,
   invitations,
@@ -16,7 +16,7 @@ import {
   type BusinessMember,
   type BusinessMemberRole,
   type Invitation,
-} from '@gcfis/db/schema';
+} from '@pnpbrain/db/schema';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

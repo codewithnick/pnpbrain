@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '@gcfis/db/client';
-import { businessCreditLedger, businesses, businessMembers } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { businessCreditLedger, businesses, businessMembers } from '@pnpbrain/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireSupabaseAuth } from '../middleware/auth';
 import { createBusiness, getBusinessByOwner } from '../lib/business';

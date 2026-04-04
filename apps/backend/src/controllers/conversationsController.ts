@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
-import { conversations, messages } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { conversations, messages } from '@pnpbrain/db/schema';
 import { requireBusinessAuth } from '../middleware/auth';
 import { resolveAgentForBusiness } from '../lib/agents';
 

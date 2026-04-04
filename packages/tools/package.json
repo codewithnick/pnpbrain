@@ -1,5 +1,5 @@
 {
-  "name": "@gcfis/tools",
+  "name": "@pnpbrain/tools",
   "version": "0.0.1",
   "private": true,
   "description": "LangGraph tool definitions — Firecrawl, calculator, datetime, etc.",
@@ -13,8 +13,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@gcfis/db": "workspace:*",
-    "@gcfis/types": "workspace:*",
+    "@pnpbrain/db": "workspace:*",
+    "@pnpbrain/types": "workspace:*",
     "@langchain/core": "^0.3.37",
     "@mendable/firecrawl-js": "^1.16.0",
     "axios": "^1.11.0",

@@ -114,7 +114,7 @@ export default function ProfileSettingsPage() {
           },
         ],
         servers: {
-          gcfisAgent: {
+          pnpbrainAgent: {
             type: 'http',
             url: mcpEndpoint,
             headers: {
@@ -372,7 +372,7 @@ export default function ProfileSettingsPage() {
           <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
             <p className="mb-2 text-xs font-medium text-slate-300">VS Code custom agent</p>
             <p className="text-xs text-slate-400">
-              Add a workspace agent at <code>.github/agents/gcfis.agent.md</code> and reference the <code>gcfisAgent</code> MCP server in its tool list to give Copilot a dedicated PNPBrain chat mode.
+              Add a workspace agent at <code>.github/agents/pnpbrain.agent.md</code> and reference the <code>pnpbrainAgent</code> MCP server in its tool list to give Copilot a dedicated PNPBrain chat mode.
             </p>
           </div>
 

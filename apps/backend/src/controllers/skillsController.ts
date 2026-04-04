@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '@gcfis/db/client';
-import { firecrawlJobs } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { firecrawlJobs } from '@pnpbrain/db/schema';
 import { getBusinessById } from '../lib/business';
 import { resolveAgentForBusiness } from '../lib/agents';
 import { requireApiKey, requireBusinessAuth } from '../middleware/auth';

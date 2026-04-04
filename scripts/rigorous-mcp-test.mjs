@@ -1,5 +1,5 @@
 const BASE = 'http://localhost:3011';
-const API_KEY = 'gcfis_live_R-Vogdjatdecbk3br0yvOCN20kh3Noxq';
+const API_KEY = 'pnpbrain_live_R-Vogdjatdecbk3br0yvOCN20kh3Noxq';
 
 const results = [];
 function record(name, pass, detail) { results.push({ name, pass, detail }); }
@@ -74,7 +74,7 @@ await run('mcp-missing-accept', async () => {
 await run('mcp-initialize', async () => {
   const r = await mcp({ jsonrpc: '2.0', id: 3, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'rigorous', version: '1.0' } } });
   must(r.status === 200, `status=${r.status}`);
-  must(r.json?.result?.serverInfo?.name === 'gcfis-agent', 'server mismatch');
+  must(r.json?.result?.serverInfo?.name === 'pnpbrain-agent', 'server mismatch');
   return `${r.json.result.serverInfo.name}@${r.json.result.serverInfo.version}`;
 });
 

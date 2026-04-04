@@ -1,5 +1,5 @@
 {
-  "name": "@gcfis/web-sdk",
+  "name": "@pnpbrain/web-sdk",
   "version": "0.0.1",
   "private": true,
   "description": "Browser chat SDK for PNpbrain (WebSocket with SSE fallback)",
@@ -13,7 +13,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@gcfis/types": "workspace:*"
+    "@pnpbrain/types": "workspace:*"
   },
   "devDependencies": {
     "rimraf": "^6.0.1",

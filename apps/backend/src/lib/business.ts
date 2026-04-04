@@ -4,12 +4,12 @@
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { getDb } from '@gcfis/db/client';
+import { getDb } from '@pnpbrain/db/client';
 import {
   businesses,
-} from '@gcfis/db/schema';
+} from '@pnpbrain/db/schema';
 import { eq, sql } from 'drizzle-orm';
-import type { Business } from '@gcfis/db';
+import type { Business } from '@pnpbrain/db';
 
 type CacheEntry = { data: Business; expiresAt: number };
 
@@ -167,7 +167,7 @@ interface PublicChatTokenPayload {
   iat: number;
 }
 
-const PUBLIC_CHAT_TOKEN_PREFIX = 'gcfis_public';
+const PUBLIC_CHAT_TOKEN_PREFIX = 'pnpbrain_public';
 const PUBLIC_CHAT_TOKEN_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7;
 
 function getPublicChatTokenSecret(): string | null {

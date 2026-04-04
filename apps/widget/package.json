@@ -1,5 +1,5 @@
 {
-  "name": "@gcfis/widget",
+  "name": "@pnpbrain/widget",
   "version": "0.0.1",
   "private": true,
   "description": "PNPBrain embeddable chat widget — standalone React app + script tag build",
@@ -13,8 +13,8 @@
     "clean": "rimraf .next dist"
   },
   "dependencies": {
-    "@gcfis/web-sdk": "workspace:*",
-    "@gcfis/types": "workspace:*",
+    "@pnpbrain/web-sdk": "workspace:*",
+    "@pnpbrain/types": "workspace:*",
     "next": "^15.1.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

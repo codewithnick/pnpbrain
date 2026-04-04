@@ -1,5 +1,5 @@
 /**
- * @gcfis/types — Shared TypeScript types for PNpbrain.
+ * @pnpbrain/types — Shared TypeScript types for PNpbrain.
  * No UI, no runtime dependencies — purely type definitions.
  */
 

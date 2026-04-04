@@ -1,5 +1,5 @@
 {
-  "name": "@gcfis/agent",
+  "name": "@pnpbrain/agent",
   "version": "0.0.1",
   "private": true,
   "description": "LangGraph.js agent graph, prompts, memory, RAG — shared only with backend",
@@ -18,9 +18,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@gcfis/db": "workspace:*",
-    "@gcfis/tools": "workspace:*",
-    "@gcfis/types": "workspace:*",
+    "@pnpbrain/db": "workspace:*",
+    "@pnpbrain/tools": "workspace:*",
+    "@pnpbrain/types": "workspace:*",
     "@langchain/anthropic": "^0.3.34",
     "@langchain/core": "^0.3.37",
     "@langchain/google-genai": "^0.2.18",

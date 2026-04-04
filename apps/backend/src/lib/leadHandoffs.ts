@@ -1,5 +1,5 @@
-import { getDb } from '@gcfis/db/client';
-import { leadHandoffs } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { leadHandoffs } from '@pnpbrain/db/schema';
 import { getLeadHandoffIntegrationForAgentScope } from './businessSkills';
 
 export interface CreateLeadHandoffInput {

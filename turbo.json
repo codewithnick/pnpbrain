@@ -8,13 +8,13 @@
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "build:zip": {
-      "dependsOn": ["@gcfis/widget#build:embed"],
-      "outputs": ["dist/*.zip", "assets/gcfis-widget.js"],
+      "dependsOn": ["@pnpbrain/widget#build:embed"],
+      "outputs": ["dist/*.zip", "assets/pnpbrain-widget.js"],
       "cache": false
     },
     "build:embed": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/gcfis-widget.js"],
+      "outputs": ["dist/pnpbrain-widget.js"],
       "inputs": ["embed.tsx", "components/**", "scripts/**"]
     },
     "dev": {

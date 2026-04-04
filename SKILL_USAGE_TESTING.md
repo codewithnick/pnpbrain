@@ -291,7 +291,7 @@ respond within 2 hours with specific guidance on:
 ## Why We Can't See Tool-Calling Fully Yet
 
 ### Issue 1: MCP Chat Tool Error
-When we call `mcp_gcfisagent_chat`, we get:
+When we call `mcp_pnpbrainagent_chat`, we get:
 ```
 Error: "Unsupported state or unable to authenticate data"
 ```
@@ -320,9 +320,9 @@ This context is built in `buildSystemPrompt()`, which means skills ARE available
 
 ### Method 1: Direct Tool Testing ✅ (Proof)
 ```bash
-cd /Users/nikhil/Desktop/GCFIS
+cd /Users/nikhil/Desktop/PNPBRAIN
 node -e "
-import { calculatorTool } from '@gcfis/tools';
+import { calculatorTool } from '@pnpbrain/tools';
 const result = await calculatorTool.func({ expression: '500 * 149 * 12' });
 console.log('Calculator works:', result);
 "

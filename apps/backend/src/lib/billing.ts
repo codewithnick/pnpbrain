@@ -10,13 +10,169 @@
 import Stripe from 'stripe';
 import Razorpay from 'razorpay';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { getDb } from '@gcfis/db/client';
-import { businessCreditLedger, businesses } from '@gcfis/db/schema';
-import { eq, gte, sql } from 'drizzle-orm';
-import type { Business } from '@gcfis/db';
+import { getDb } from '@pnpbrain/db/client';
+import { businessCreditLedger, businesses } from '@pnpbrain/db/schema';
+import { and, eq, gte, sql } from 'drizzle-orm';
+import type { Business } from '@pnpbrain/db';
 
 export const TOP_UP_MEDIUMS = ['any', 'card', 'wallet', 'bank_debit', 'razorpay', 'manual'] as const;
 export type TopUpMedium = (typeof TOP_UP_MEDIUMS)[number];
+
+export const PLAN_TIERS = ['freemium', 'lite', 'basic', 'pro', 'custom'] as const;
+export type PlanTier = (typeof PLAN_TIERS)[number];
+
+type PlanDefinition = {
+  tier: PlanTier;
+  label: string;
+  monthlyMessages: number | null;
+  requiresSupport: boolean;
+};
+
+const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
+  freemium: {
+    tier: 'freemium',
+    label: 'Freemium',
+    monthlyMessages: 200,
+    requiresSupport: false,
+  },
+  lite: {
+    tier: 'lite',
+    label: 'Lite',
+    monthlyMessages: 2_000,
+    requiresSupport: false,
+  },
+  basic: {
+    tier: 'basic',
+    label: 'Basic',
+    monthlyMessages: 10_000,
+    requiresSupport: false,
+  },
+  pro: {
+    tier: 'pro',
+    label: 'Pro',
+    monthlyMessages: 50_000,
+    requiresSupport: false,
+  },
+  custom: {
+    tier: 'custom',
+    label: 'Custom',
+    monthlyMessages: null,
+    requiresSupport: true,
+  },
+};
+
+const BILLING_PERIOD_DAYS = 30;
+
+function getPlanDefinition(planTierRaw: string | null | undefined): PlanDefinition {
+  const normalized = String(planTierRaw ?? 'freemium').toLowerCase();
+  if (PLAN_TIERS.includes(normalized as PlanTier)) {
+    return PLAN_DEFINITIONS[normalized as PlanTier];
+  }
+
+  return PLAN_DEFINITIONS.freemium;
+}
+
+function getStripePriceIdForPlan(tier: PlanTier): string {
+  if (tier === 'freemium' || tier === 'custom') {
+    throw new Error('This plan does not use self-serve checkout');
+  }
+
+  const envMap: Record<Exclude<PlanTier, 'freemium' | 'custom'>, string | undefined> = {
+    lite: process.env['STRIPE_PRICE_ID_LITE'],
+    basic: process.env['STRIPE_PRICE_ID_BASIC'],
+    pro: process.env['STRIPE_PRICE_ID_PRO'],
+  };
+
+  const selected = envMap[tier];
+  if (selected) return selected;
+
+  const fallback = process.env['STRIPE_PRICE_ID'];
+  if (!fallback) {
+    throw new Error('Stripe price ID is not configured for this plan');
+  }
+
+  return fallback;
+}
+
+function resolvePlanFromStripePrice(priceId: string | null | undefined): PlanTier | null {
+  if (!priceId) return null;
+
+  const idByPlan: Array<[PlanTier, string | undefined]> = [
+    ['lite', process.env['STRIPE_PRICE_ID_LITE']],
+    ['basic', process.env['STRIPE_PRICE_ID_BASIC']],
+    ['pro', process.env['STRIPE_PRICE_ID_PRO']],
+  ];
+
+  for (const [tier, configuredPriceId] of idByPlan) {
+    if (configuredPriceId && configuredPriceId === priceId) {
+      return tier;
+    }
+  }
+
+  const fallback = process.env['STRIPE_PRICE_ID'];
+  if (fallback && fallback === priceId) {
+    return 'basic';
+  }
+
+  return null;
+}
+
+function nextBillingPeriodEnd(from: Date): Date {
+  return new Date(from.getTime() + BILLING_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+}
+
+export async function refreshBusinessUsageCycleIfNeeded(business: Business): Promise<Business> {
+  const plan = getPlanDefinition(business.planTier);
+  if (plan.monthlyMessages === null) {
+    return business;
+  }
+
+  const now = new Date();
+  const periodEnd = business.currentPeriodEnd;
+  const needsReset = !periodEnd || periodEnd <= now;
+  if (!needsReset) {
+    return business;
+  }
+
+  const [updated] = await getDb()
+    .update(businesses)
+    .set({
+      creditBalance: plan.monthlyMessages,
+      currentPeriodEnd: nextBillingPeriodEnd(now),
+      updatedAt: sql`now()`,
+    })
+    .where(eq(businesses.id, business.id))
+    .returning();
+
+  return updated ?? business;
+}
+
+export async function setBusinessPlanTier(
+  businessId: string,
+  planTier: PlanTier
+): Promise<Business | null> {
+  const plan = getPlanDefinition(planTier);
+  const now = new Date();
+
+  const [updated] = await getDb()
+    .update(businesses)
+    .set({
+      planTier,
+      creditBalance:
+        plan.monthlyMessages === null
+          ? businesses.creditBalance
+          : sql`GREATEST(${businesses.creditBalance}, ${plan.monthlyMessages})`,
+      currentPeriodEnd:
+        plan.monthlyMessages === null
+          ? businesses.currentPeriodEnd
+          : nextBillingPeriodEnd(now),
+      updatedAt: sql`now()`,
+    })
+    .where(eq(businesses.id, businessId))
+    .returning();
+
+  return updated ?? null;
+}
 
 // ─── Stripe client ────────────────────────────────────────────────────────────
 
@@ -43,6 +199,11 @@ function getRazorpay(): Razorpay {
  * True during an active trial or when subscribed (active / past_due grace).
  */
 export function isBusinessActive(business: Business): boolean {
+  const plan = getPlanDefinition(business.planTier);
+  if (plan.monthlyMessages === null) {
+    return true;
+  }
+
   return business.creditBalance > 0;
 }
 
@@ -50,6 +211,7 @@ export function isBusinessActive(business: Business): boolean {
  * Detailed billing status object returned to the admin UI.
  */
 export function getBillingStatus(business: Business) {
+  const plan = getPlanDefinition(business.planTier);
   const now = new Date();
   const trialEnd = new Date(business.trialEndsAt);
   const isTrialing = business.subscriptionStatus === 'trialing';
@@ -64,15 +226,24 @@ export function getBillingStatus(business: Business) {
     trialExpired: isTrialing && trialEnd <= now,
     trialEndsAt: business.trialEndsAt.toISOString(),
     trialDaysRemaining,
+    planTier: plan.tier,
+    planLabel: plan.label,
+    monthlyMessageLimit: plan.monthlyMessages,
     currentPeriodEnd: business.currentPeriodEnd?.toISOString() ?? null,
     messagesUsedTotal: business.messagesUsedTotal,
     creditBalance: business.creditBalance,
     signupCreditsGranted: business.signupCreditsGranted,
     creditsPurchasedTotal: business.creditsPurchasedTotal,
     creditsUsedTotal: business.creditsUsedTotal,
-    includedApiCredits: business.signupCreditsGranted + business.creditsPurchasedTotal,
-    remainingApiCredits: business.creditBalance,
+    includedApiCredits: plan.monthlyMessages,
+    remainingApiCredits: plan.monthlyMessages === null ? null : business.creditBalance,
     hasStripeCustomer: Boolean(business.stripeCustomerId),
+    planCatalog: PLAN_TIERS.map((tier) => ({
+      tier,
+      label: PLAN_DEFINITIONS[tier].label,
+      monthlyMessages: PLAN_DEFINITIONS[tier].monthlyMessages,
+      requiresSupport: PLAN_DEFINITIONS[tier].requiresSupport,
+    })),
   };
 }
 
@@ -116,10 +287,10 @@ export async function getOrCreateStripeCustomer(
 export async function createCheckoutSession(
   business: Business,
   email: string,
-  returnUrl: string
+  returnUrl: string,
+  planTier: PlanTier
 ): Promise<string> {
-  const priceId = process.env['STRIPE_PRICE_ID'];
-  if (!priceId) throw new Error('STRIPE_PRICE_ID is not configured');
+  const priceId = getStripePriceIdForPlan(planTier);
 
   const stripe = getStripe();
   const customerId = await getOrCreateStripeCustomer(business, email);
@@ -129,7 +300,7 @@ export async function createCheckoutSession(
     mode: 'subscription',
     line_items: [{ price: priceId }],
     subscription_data: {
-      metadata: { businessId: business.id },
+      metadata: { businessId: business.id, planTier },
     },
     success_url: `${returnUrl}?billing=success`,
     cancel_url: `${returnUrl}?billing=canceled`,
@@ -173,6 +344,21 @@ export async function createPortalSession(
  * Designed to be called fire-and-forget (non-blocking from chat route).
  */
 export async function recordMessageUsage(business: Business, agentId?: string): Promise<void> {
+  const plan = getPlanDefinition(business.planTier);
+
+  if (plan.monthlyMessages === null) {
+    await getDb()
+      .update(businesses)
+      .set({
+        messagesUsedTotal: sql`${businesses.messagesUsedTotal} + 1`,
+        creditsUsedTotal: sql`${businesses.creditsUsedTotal} + 1`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(businesses.id, business.id));
+
+    return;
+  }
+
   const db = getDb();
   const [updated] = await db
     .update(businesses)
@@ -182,7 +368,7 @@ export async function recordMessageUsage(business: Business, agentId?: string): 
       creditBalance: sql`${businesses.creditBalance} - 1`,
       updatedAt: sql`now()`,
     })
-    .where(gte(businesses.creditBalance, 1))
+    .where(and(eq(businesses.id, business.id), gte(businesses.creditBalance, 1)))
     .returning({
       businessId: businesses.id,
       balanceAfter: businesses.creditBalance,
@@ -470,7 +656,7 @@ export async function settleRazorpayPaymentCapture(event: RazorpayWebhookPayload
   if (event.event !== 'payment.captured') return;
 
   const payment = event.payload?.payment?.entity;
-  if (!payment || payment.status !== 'captured') return;
+  if (payment?.status !== 'captured') return;
 
   const kind = payment.notes?.['kind'];
   if (kind !== 'credit_top_up') return;
@@ -547,10 +733,15 @@ export async function syncStripeSubscription(sub: Stripe.Subscription): Promise<
   const item = sub.items.data[0];
   const status = mapStripeStatus(sub.status);
   const currentPeriodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
+  const planTierFromMetadata = sub.metadata['planTier'];
+  const planTierFromPrice = resolvePlanFromStripePrice(item?.price?.id ?? null);
+  const planTier = getPlanDefinition(planTierFromMetadata ?? planTierFromPrice ?? 'basic').tier;
+  const plan = getPlanDefinition(planTier);
 
   await getDb()
     .update(businesses)
     .set({
+      planTier,
       stripeSubscriptionId: sub.id,
       stripeSubscriptionItemId: item?.id ?? null,
       subscriptionStatus: status,
@@ -558,6 +749,10 @@ export async function syncStripeSubscription(sub: Stripe.Subscription): Promise<
         typeof currentPeriodEnd === 'number'
           ? new Date(currentPeriodEnd * 1000)
           : null,
+      creditBalance:
+        plan.monthlyMessages === null
+          ? businesses.creditBalance
+          : sql`GREATEST(${businesses.creditBalance}, ${plan.monthlyMessages})`,
       updatedAt: sql`now()`,
     })
     .where(eq(businesses.id, businessId));
@@ -573,6 +768,7 @@ export async function cancelSubscription(sub: Stripe.Subscription): Promise<void
   await getDb()
     .update(businesses)
     .set({
+      planTier: 'freemium',
       subscriptionStatus: 'canceled',
       stripeSubscriptionId: null,
       stripeSubscriptionItemId: null,

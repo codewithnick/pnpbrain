@@ -1,5 +1,5 @@
 {
-  "name": "@gcfis/db",
+  "name": "@pnpbrain/db",
   "version": "0.0.1",
   "private": true,
   "description": "Drizzle ORM schemas, Supabase client, migrations — shared only with backend",
@@ -19,7 +19,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@gcfis/types": "workspace:*",
+    "@pnpbrain/types": "workspace:*",
     "@supabase/supabase-js": "^2.47.10",
     "drizzle-orm": "^0.38.3",
     "postgres": "^3.4.5"

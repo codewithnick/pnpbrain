@@ -1,7 +1,7 @@
 /**
  * Businesses table — each business owner has one entry.
  */
-import { boolean, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const businesses = pgTable('businesses', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -36,6 +36,12 @@ export const businesses = pgTable('businesses', {
   })
     .notNull()
     .default('trialing'),
+  /** Current pricing tier. */
+  planTier: text('plan_tier', {
+    enum: ['freemium', 'lite', 'basic', 'pro', 'custom'],
+  })
+    .notNull()
+    .default('freemium'),
   /** Stripe Customer ID (cus_xxx). Populated on first checkout. */
   stripeCustomerId: text('stripe_customer_id'),
   /** Stripe Subscription ID (sub_xxx). Populated after checkout. */
@@ -49,10 +55,10 @@ export const businesses = pgTable('businesses', {
   currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
   /** Running total of AI messages processed (for display / analytics). */
   messagesUsedTotal: integer('messages_used_total').notNull().default(0),
-  /** Current business-wide spendable credits. */
-  creditBalance: integer('credit_balance').notNull().default(100),
-  /** Credits granted at signup (default free tier allocation). */
-  signupCreditsGranted: integer('signup_credits_granted').notNull().default(100),
+  /** Current business-wide spendable monthly message allowance. */
+  creditBalance: integer('credit_balance').notNull().default(200),
+  /** Monthly allowance granted on signup for freemium businesses. */
+  signupCreditsGranted: integer('signup_credits_granted').notNull().default(200),
   /** Lifetime total credits purchased via top-ups. */
   creditsPurchasedTotal: integer('credits_purchased_total').notNull().default(0),
   /** Lifetime credits consumed by API usage. */

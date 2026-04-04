@@ -757,7 +757,7 @@ export default function SkillsPage() {
             value={newCustomWebhookUrl}
             onChange={(e) => setNewCustomWebhookUrl(e.target.value)}
             className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            placeholder="Webhook URL (https://api.example.com/gcfis/custom-skill)"
+            placeholder="Webhook URL (https://api.example.com/pnpbrain/custom-skill)"
           />
 
           <textarea

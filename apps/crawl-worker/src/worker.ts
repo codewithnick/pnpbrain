@@ -3,8 +3,8 @@ import IORedis from 'ioredis';
 import path from 'node:path';
 import { config as loadDotenv } from 'dotenv';
 import { eq } from 'drizzle-orm';
-import { getDb } from '@gcfis/db/client';
-import { firecrawlJobs } from '@gcfis/db/schema';
+import { getDb } from '@pnpbrain/db/client';
+import { firecrawlJobs } from '@pnpbrain/db/schema';
 import { processCrawlJob } from './jobs/crawlRunner';
 
 type CrawlJobData = {

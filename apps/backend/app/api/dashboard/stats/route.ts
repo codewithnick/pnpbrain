@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { count, eq } from 'drizzle-orm';
 import { requireSupabaseAuth, corsResponse } from '@/lib/auth';
 import { getBusinessByOwner } from '@/lib/business';
-import { getDb } from '@gcfis/db/client';
+import { getDb } from '@pnpbrain/db/client';
 import {
   conversations,
   firecrawlJobs,
   knowledgeDocuments,
   memoryFacts,
-} from '@gcfis/db/schema';
+} from '@pnpbrain/db/schema';
 
 export const runtime = 'nodejs';
 
