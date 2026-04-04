@@ -52,9 +52,7 @@ function AcceptPageInner() {
       return;
     }
     (async () => {
-      const res = await fetch(
-        `${process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3011'}/api/team/invitations/preview?token=${encodeURIComponent(token)}`,
-      );
+      const res = await fetchBackend(`/api/team/invitations/preview?token=${encodeURIComponent(token)}`);
       const json = (await res.json()) as { ok: boolean; data?: InviteDetail; error?: string };
       if (!res.ok || !json.ok) {
         setLoadError(json.error ?? 'Invitation not found or expired.');

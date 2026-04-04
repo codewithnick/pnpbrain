@@ -30,11 +30,17 @@ export function getBackendUrl(): string {
 }
 
 function buildBackendRequestUrl(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  if (typeof window !== 'undefined') {
+    const url = new URL(normalizedPath, 'http://localhost');
+    return `/api/proxy${url.pathname}${url.search}`;
+  }
+
   const backendUrl = getBackendUrl().trim();
   const baseUrl = backendUrl.length > 0 ? backendUrl : 'http://localhost:3011';
 
-  // Build URL safely for both absolute and relative API paths.
-  return new URL(path, baseUrl).toString();
+  return new URL(normalizedPath, baseUrl).toString();
 }
 
 function slugifyBusinessName(value: string): string {
@@ -79,7 +85,7 @@ export async function ensureBusinessProvisioned(): Promise<void> {
   const suffix = user.id.replace(/-/g, '').slice(0, 6).toLowerCase();
 
   const register = async (slug: string) => {
-    return fetch(`${getBackendUrl()}/api/auth/register`, {
+    return fetchBackend('/api/auth/register', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -187,7 +193,7 @@ export async function fetchBackend(path: string, init: RequestInit = {}): Promis
     const message =
       error instanceof Error
         ? error.message
-        : 'Failed to reach backend API. Ensure NEXT_PUBLIC_BACKEND_URL points to a running backend.';
+        : 'Failed to reach backend API. Ensure BACKEND_INTERNAL_URL or NEXT_PUBLIC_BACKEND_URL points to a running backend.';
 
     return new Response(JSON.stringify({ error: message }), {
       status: 503,

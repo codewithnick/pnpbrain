@@ -22,7 +22,10 @@ function slugifyBusinessName(value: string): string {
 }
 
 async function ensureBusinessProvisionedServerSide(accessToken: string, email: string | null, userId: string) {
-  const backendUrl = process.env['NEXT_PUBLIC_BACKEND_URL'] ?? 'http://localhost:3011';
+  const backendUrl =
+    process.env['BACKEND_INTERNAL_URL']?.trim()
+    || process.env['NEXT_PUBLIC_BACKEND_URL']?.trim()
+    || 'http://localhost:3011';
   const authHeader = { Authorization: `Bearer ${accessToken}` };
 
   const meResponse = await fetch(`${backendUrl}/api/business/me`, {

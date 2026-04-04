@@ -34,6 +34,7 @@ import { isBusinessActive, recordMessageUsage, refreshBusinessUsageCycleIfNeeded
 import { shouldEscalateResponse } from '../lib/escalation';
 import { createSupportTicket } from '../lib/supportTickets';
 import { createLeadHandoff } from '../lib/leadHandoffs';
+import { resolveAllowedCorsOrigin } from '../middleware/cors';
 
 const ChatRequestSchema = z.object({
   message: z.string().min(1).max(4000),
@@ -252,7 +253,11 @@ export class ChatController {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', process.env['ALLOWED_ORIGINS'] ?? '*');
+
+    const allowedOrigin = resolveAllowedCorsOrigin(typeof req.headers.origin === 'string' ? req.headers.origin : undefined);
+    if (allowedOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    }
 
     const emit = (event: StreamEvent) => {
       res.write(`data: ${JSON.stringify(event)}\n\n`);

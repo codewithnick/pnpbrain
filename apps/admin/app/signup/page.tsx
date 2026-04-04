@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { buildAdminUrl } from '@/lib/public-url';
-import { getBackendUrl, getSupabaseBrowserClient, persistAccessTokenCookie } from '@/lib/supabase';
+import { fetchBackend, getSupabaseBrowserClient, persistAccessTokenCookie } from '@/lib/supabase';
 
 function slugify(value: string): string {
   return value
@@ -101,7 +101,7 @@ export default function SignupPage() {
     }
 
     setLoading(true);
-    const res = await fetch(`${getBackendUrl()}/api/auth/register`, {
+    const res = await fetchBackend('/api/auth/register', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

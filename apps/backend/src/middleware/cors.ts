@@ -9,21 +9,64 @@ function isLocalDevOrigin(origin: string): boolean {
   }
 }
 
+function normalizeOrigin(origin: string): string {
+  return origin.trim().replace(/\/+$/, '');
+}
+
+function parseOrigins(rawValue: string | undefined): string[] {
+  if (!rawValue) {
+    return [];
+  }
+
+  return rawValue
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => (value === '*' ? value : normalizeOrigin(value)));
+}
+
+export function getAllowedCorsOrigins(): string[] {
+  const configuredOrigins = parseOrigins(process.env['ALLOWED_ORIGINS']);
+
+  if (configuredOrigins.length === 0) {
+    return ['*'];
+  }
+
+  const inferredOrigins = [
+    process.env['NEXT_PUBLIC_ADMIN_URL'],
+    process.env['NEXT_PUBLIC_MARKETING_URL'],
+    process.env['NEXT_PUBLIC_WIDGET_URL'],
+  ].flatMap((value) => parseOrigins(value));
+
+  return Array.from(new Set([...configuredOrigins, ...inferredOrigins]));
+}
+
+export function resolveAllowedCorsOrigin(origin: string | undefined): string | null {
+  if (!origin) {
+    return getAllowedCorsOrigins().includes('*') ? '*' : null;
+  }
+
+  const normalizedOrigin = normalizeOrigin(origin);
+  const allowedOrigins = getAllowedCorsOrigins();
+  const allowLocalDev = process.env['NODE_ENV'] !== 'production' && isLocalDevOrigin(normalizedOrigin);
+
+  if (allowLocalDev || allowedOrigins.includes('*') || allowedOrigins.includes(normalizedOrigin)) {
+    return normalizedOrigin;
+  }
+
+  return null;
+}
+
 /**
  * CORS middleware with custom origin handling.
  * Supports environment variable-based allowed origins.
  */
 export function corsMwfn(req: Request, res: Response, next: NextFunction) {
-  const allowedOrigins = process.env['ALLOWED_ORIGINS']
-    ? process.env['ALLOWED_ORIGINS'].split(',').map(s => s.trim())
-    : ['*'];
+  const originHeader = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+  const allowedOrigin = resolveAllowedCorsOrigin(originHeader);
 
-  const origin = req.headers.origin;
-
-  const allowLocalDev = process.env['NODE_ENV'] !== 'production' && !!origin && isLocalDevOrigin(origin);
-
-  if (allowedOrigins.includes('*') || !origin || allowedOrigins.includes(origin) || allowLocalDev) {
-    res.setHeader('Access-Control-Allow-Origin', origin ?? '*');
+  if (allowedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   }
 
   res.setHeader('Vary', 'Origin');

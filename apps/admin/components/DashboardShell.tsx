@@ -11,6 +11,7 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import { AppBar, Box, Button, Chip, Stack, Toolbar, Typography } from '@mui/material';
 import Sidebar from '@/components/Sidebar';
+import { fetchBackend } from '@/lib/supabase';
 
 function getSupabase() {
   return createClient(
@@ -26,13 +27,11 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   useEffect(() => {
     (async () => {
       const { data } = await getSupabase().auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-      const base = process.env['NEXT_PUBLIC_BACKEND_URL'] ?? '';
-      const res = await fetch(`${base}/api/business/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      if (!data.session?.access_token) return;
+
+      const res = await fetchBackend('/api/business/me');
       if (!res.ok) return;
+
       const json = (await res.json()) as { data?: { slug?: string } };
       if (json.data?.slug) setSlug(json.data.slug);
     })();
