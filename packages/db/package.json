@@ -16,6 +16,10 @@
     "db:migrate": "pnpm run db:ensure-extensions && drizzle-kit migrate",
     "db:push": "pnpm run db:ensure-extensions && drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:status": "node ./scripts/db-status.mjs ../../.env.local",
+    "db:status:prod": "node ./scripts/db-status.mjs ../../.env.prod",
+    "db:compare": "node ./scripts/compare-db-sync.mjs ../../.env.local ../../.env.prod",
+    "db:compare:strict": "node ./scripts/compare-db-sync.mjs --strict ../../.env.local ../../.env.prod",
     "type-check": "tsc --noEmit",
     "clean": "rimraf dist"
   },
