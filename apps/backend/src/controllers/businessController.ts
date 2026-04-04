@@ -16,10 +16,8 @@ import {
 } from '../lib/business';
 import {
   disconnectIntegrationForAgent,
-  getAllIntegrationsForAgentScope,
   getEnabledSkillsForAgentScope,
-  getMeetingIntegrationForAgentScope,
-  getSupportIntegrationForAgentScope,
+  getResolvedIntegrationsForAgentScope,
   setEnabledSkillsForAgent,
   upsertIntegrationForAgent,
 } from '../lib/businessSkills';
@@ -38,10 +36,9 @@ const SKILL_NAMES = [
 ] as const;
 const POSITIONS = ['bottom-right', 'bottom-left'] as const;
 const THEMES = ['light', 'dark'] as const;
-const OAUTH_PROVIDERS = ['google', 'zoom'] as const;
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
-type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
+type OAuthProvider = 'google' | 'zoom';
 
 interface OAuthStatePayload {
   provider: OAuthProvider;
@@ -125,12 +122,12 @@ async function toSafeBusinessResponse(
     ? { businessId: business.id, agentId: activeAgent.id }
     : { businessId: business.id, agentId: null };
 
-  const [enabledSkills, integrations, meetingIntegration, supportIntegration] = await Promise.all([
+  const [enabledSkills, resolvedIntegrations] = await Promise.all([
     getEnabledSkillsForAgentScope(scope),
-    getAllIntegrationsForAgentScope(scope),
-    getMeetingIntegrationForAgentScope(scope),
-    getSupportIntegrationForAgentScope(scope),
+    getResolvedIntegrationsForAgentScope(scope),
   ]);
+
+  const { integrations, meetingIntegration, supportIntegration } = resolvedIntegrations;
 
   return {
     id: business.id,
@@ -210,7 +207,6 @@ export class BusinessController {
       return res.status(400).json({ ok: false, error: parsed.error.issues.map((i) => i.message).join(', ') });
     }
 
-    const updates = parsed.data as Record<string, unknown>;
     const selectedAgent = await resolveRequestedAgent(req, auth.businessId);
 
     if (parsed.data.slug && parsed.data.slug !== business.slug) {

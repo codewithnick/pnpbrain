@@ -2,6 +2,7 @@
 
 import NextLink from 'next/link';
 import { useState } from 'react';
+import { getPnpbrainWidgetCdnUrls } from '@pnpbrain/types';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
 import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded';
@@ -16,8 +17,10 @@ import {
   Typography,
 } from '@mui/material';
 
+const widgetCdn = getPnpbrainWidgetCdnUrls();
+
 const scriptSnippet = `<script
-  src="https://cdn.pnpbrain.com/widget/pnpbrain-widget.js"
+  src="${widgetCdn.versionedUrl}"
   data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
   data-backend-url="https://api.your-domain.com"
   data-bot-name="Support Assistant"
@@ -48,7 +51,7 @@ const mountNodeSnippet = `<div
   data-show-user-avatar="true"
   data-position="bottom-right"
 ></div>
-<script src="https://cdn.pnpbrain.com/widget/pnpbrain-widget.js"></script>`;
+<script src="${widgetCdn.versionedUrl}"></script>`;
 
 const wordpressSnippet = `1. Upload and activate the PNPBRAIN WordPress plugin.
 2. Go to Settings -> PNPBRAIN Widget.
@@ -77,7 +80,11 @@ const previewMessages = [
   { role: 'user', content: 'How do I connect this widget to my site?', bg: '#2563eb', color: '#ffffff' },
 ];
 
-function CodeBlock({ code, onCopy, copied }: { code: string; onCopy: () => void; copied: boolean }) {
+function CodeBlock({
+  code,
+  onCopy,
+  copied,
+}: Readonly<{ code: string; onCopy: () => void; copied: boolean }>) {
   return (
     <Box sx={{ mt: 1.5 }}>
       <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1 }}>
@@ -125,7 +132,7 @@ export default function EmbedPage() {
   async function copySnippet(text: string, snippet: 'script' | 'mount' | 'wordpress') {
     await navigator.clipboard.writeText(text);
     setCopiedSnippet(snippet);
-    window.setTimeout(() => setCopiedSnippet(null), 1800);
+    globalThis.setTimeout(() => setCopiedSnippet(null), 1800);
   }
 
   return (
@@ -139,7 +146,7 @@ export default function EmbedPage() {
             Plug your agent into any website in minutes with a single script tag.
           </Typography>
         </Box>
-        <Chip color="primary" variant="outlined" label="Plug and Play" />
+        <Chip color="primary" variant="outlined" label={`jsDelivr • ${widgetCdn.tag}`} />
       </Stack>
 
       <Paper
@@ -169,7 +176,7 @@ export default function EmbedPage() {
             <Typography variant="h6">Default website embed</Typography>
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Add this script on any site where you want the floating chat launcher to appear.
+            Add this version-pinned jsDelivr script on any site where you want the floating chat launcher to appear.
           </Typography>
           <CodeBlock
             code={scriptSnippet}

@@ -7,7 +7,7 @@
     "dev": "next dev --port 3010",
     "build": "next build",
     "start": "next start --port 3010",
-    "lint": "echo 'Skipping ESLint for Next.js app'",
+    "lint": "next lint",
     "type-check": "tsc --noEmit",
     "clean": "rimraf .next"
   },

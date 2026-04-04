@@ -133,7 +133,7 @@ export default function LlmSettingsPage() {
       {/* Provider cards */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-0.5">Provider</h3>
-        <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">The AI service that powers your agent's responses.</p>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">The AI service that powers your agent&apos;s responses.</p>
         <div className="space-y-3">
           {PROVIDERS.map((p) => {
             const active = provider === p.value;

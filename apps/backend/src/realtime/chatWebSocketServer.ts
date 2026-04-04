@@ -5,7 +5,7 @@ import { runGraph } from '@pnpbrain/agent/graph';
 import { extractAndSaveMemory } from '@pnpbrain/agent/memory';
 import { getDb } from '@pnpbrain/db/client';
 import { conversations, messages } from '@pnpbrain/db/schema';
-import { asc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import type { Agent, Business } from '@pnpbrain/db';
 import type { GraphInput } from '@pnpbrain/agent/graph';
 import type { StreamEvent } from '@pnpbrain/types';
@@ -18,8 +18,7 @@ import {
 } from '../lib/business';
 import {
   getEnabledSkillsForAgentScope,
-  getMeetingIntegrationForAgentScope,
-  getSupportIntegrationForAgentScope,
+  getResolvedIntegrationsForAgentScope,
 } from '../lib/businessSkills';
 import { getEnabledCustomWebhookSkillsForAgentScope } from '../lib/customSkills';
 import { isBusinessActive, recordMessageUsage, refreshBusinessUsageCycleIfNeeded } from '../lib/billing';
@@ -35,7 +34,7 @@ const ChatSocketRequestSchema = z.object({
   agentId: z.string().uuid().optional(),
 });
 
-interface ChatSocketRequest extends z.infer<typeof ChatSocketRequestSchema> {}
+type ChatSocketRequest = z.infer<typeof ChatSocketRequestSchema>;
 
 interface InstallOptions {
   path: string;
@@ -219,24 +218,26 @@ async function processChatRequest(
 
   emit({ type: 'step', step: 'retrieving_context' });
 
-  const [enabledSkills, customSkills, meetingIntegration, supportIntegration] = await Promise.all([
+  const [enabledSkills, customSkills, resolvedIntegrations] = await Promise.all([
     getEnabledSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
     getEnabledCustomWebhookSkillsForAgentScope({ businessId: business.id, agentId: agent.id }),
-    getMeetingIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
-    getSupportIntegrationForAgentScope({ businessId: business.id, agentId: agent.id }),
+    getResolvedIntegrationsForAgentScope({ businessId: business.id, agentId: agent.id }),
   ]);
+
+  const { meetingIntegration, supportIntegration } = resolvedIntegrations;
 
   const historyRows = await db
     .select({ role: messages.role, content: messages.content })
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
-    .orderBy(asc(messages.createdAt));
+    .orderBy(desc(messages.createdAt))
+    .limit(21);
 
-  const conversationHistory = historyRows
+  const conversationHistory = [...historyRows]
+    .reverse()
     .filter((row): row is { role: 'user' | 'assistant' | 'system'; content: string } =>
       row.role === 'user' || row.role === 'assistant' || row.role === 'system'
-    )
-    .slice(-21);
+    );
 
   const lastMessage = conversationHistory.at(-1);
   const normalizedHistory =

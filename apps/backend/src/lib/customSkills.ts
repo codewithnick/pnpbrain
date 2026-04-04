@@ -14,8 +14,8 @@ export interface CustomWebhookSkillRuntime {
 export function normalizeSkillKey(input: string): string {
   const trimmed = input.trim().toLowerCase();
   const normalized = trimmed
-    .replace(/[^a-z0-9_\-\s]/g, '')
-    .replace(/[\s\-]+/g, '_')
+    .replace(/[^a-z0-9_-\s]/g, '')
+    .replace(/[\s-]+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 48);

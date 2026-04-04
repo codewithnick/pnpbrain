@@ -5,6 +5,8 @@ import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/cl
 
 let supabaseClient: SupabaseClient | null = null;
 const SELECTED_AGENT_STORAGE_KEY = 'pnpbrain.selected-agent-id';
+const inFlightBackendRequests = new Map<string, Promise<Response>>();
+let cachedSelectedAgentId: string | null | undefined;
 
 const AGENT_SCOPED_API_PREFIXES = [
   '/api/business/me',
@@ -138,16 +140,22 @@ export function persistAccessTokenCookie(accessToken?: string | null): void {
 
 export function getSelectedAgentId(): string | null {
   if (typeof window === 'undefined') return null;
+  if (cachedSelectedAgentId !== undefined) return cachedSelectedAgentId;
+
   const value = window.localStorage.getItem(SELECTED_AGENT_STORAGE_KEY)?.trim();
-  return value ? value : null;
+  cachedSelectedAgentId = value ? value : null;
+  return cachedSelectedAgentId;
 }
 
 export function setSelectedAgentId(agentId: string | null): void {
   if (typeof window === 'undefined') return;
 
   if (agentId && agentId.trim().length > 0) {
-    window.localStorage.setItem(SELECTED_AGENT_STORAGE_KEY, agentId.trim());
+    const normalizedAgentId = agentId.trim();
+    cachedSelectedAgentId = normalizedAgentId;
+    window.localStorage.setItem(SELECTED_AGENT_STORAGE_KEY, normalizedAgentId);
   } else {
+    cachedSelectedAgentId = null;
     window.localStorage.removeItem(SELECTED_AGENT_STORAGE_KEY);
   }
 }
@@ -169,6 +177,14 @@ function withAgentScope(path: string, agentId: string | null): string {
   return `${url.pathname}${url.search}`;
 }
 
+function buildRequestDedupKey(url: string, method: string, selectedAgentId: string | null): string | null {
+  if (method !== 'GET' && method !== 'HEAD') {
+    return null;
+  }
+
+  return `${method}:${url}:${selectedAgentId ?? 'all-agents'}`;
+}
+
 export async function fetchBackend(path: string, init: RequestInit = {}): Promise<Response> {
   const token = await getAccessToken();
   const headers = new Headers(init.headers);
@@ -184,12 +200,40 @@ export async function fetchBackend(path: string, init: RequestInit = {}): Promis
     headers.set('x-agent-id', selectedAgentId);
   }
 
+  const method = (init.method ?? 'GET').toUpperCase();
+  const requestUrl = buildBackendRequestUrl(scopedPath);
+  const dedupKey = buildRequestDedupKey(requestUrl, method, selectedAgentId);
+
   try {
-    return await fetch(buildBackendRequestUrl(scopedPath), {
+    if (dedupKey) {
+      const inFlightRequest = inFlightBackendRequests.get(dedupKey);
+      if (inFlightRequest) {
+        return (await inFlightRequest).clone();
+      }
+    }
+
+    const requestPromise = fetch(requestUrl, {
       ...init,
       headers,
     });
+
+    if (dedupKey) {
+      inFlightBackendRequests.set(dedupKey, requestPromise);
+    }
+
+    const response = await requestPromise;
+
+    if (dedupKey) {
+      inFlightBackendRequests.delete(dedupKey);
+      return response.clone();
+    }
+
+    return response;
   } catch (error) {
+    if (dedupKey) {
+      inFlightBackendRequests.delete(dedupKey);
+    }
+
     const message =
       error instanceof Error
         ? error.message

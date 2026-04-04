@@ -82,9 +82,13 @@ Save to Memory & Analytics
 
 ### 2. Script Tag Embed
 ```html
-<script src="https://pnpbrain.com/embed.js" data-agent-id="..."></script>
+<script
+  src="https://cdn.jsdelivr.net/gh/codewithnick/pnpbrain@widget-v0.0.1/apps/widget/dist/pnpbrain-widget.js"
+  data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
+  data-backend-url="https://api.pnpbrain.com"
+></script>
 ```
-Works on any website (Shopify, custom sites, landing pages)
+Works on any website (Shopify, custom sites, landing pages) and supports version-pinned CDN delivery via jsDelivr.
 
 ### 3. React Component
 For developers building custom integrations:

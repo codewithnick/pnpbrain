@@ -103,7 +103,7 @@ export default function Pricing() {
             Simple, transparent pricing
           </Typography>
           <Typography sx={{ mt: 1.5, color: 'text.secondary', fontSize: { xs: '1rem', md: '1.1rem' } }}>
-            Start free. Upgrade when you're ready.
+            Start free. Upgrade when you&apos;re ready.
           </Typography>
         </Box>
 

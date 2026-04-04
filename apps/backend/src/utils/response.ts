@@ -3,7 +3,7 @@ import { Response } from 'express';
 /**
  * Send a success JSON response.
  */
-export function sendSuccess(res: Response, data: any, status = 200) {
+export function sendSuccess(res: Response, data: unknown, status = 200) {
   return res.status(status).json({ ok: true, data });
 }
 

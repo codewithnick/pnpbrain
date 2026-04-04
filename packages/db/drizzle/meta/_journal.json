@@ -15,6 +15,20 @@
       "when": 1775073600000,
       "tag": "0001_widget_customization_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775077200000,
+      "tag": "0002_plan_tiers_and_monthly_allowance",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775260800000,
+      "tag": "0003_query_performance_indexes",
+      "breakpoints": true
     }
   ]
 }

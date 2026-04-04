@@ -5,7 +5,7 @@
  * `pnpm build:embed`.  Business owners drop a single <script> tag on their site:
  *
  *   <script
- *     src="https://cdn.pnpbrain.com/widget/pnpbrain-widget.js"
+ *     src="https://cdn.jsdelivr.net/gh/codewithnick/pnpbrain@widget-v0.0.1/apps/widget/dist/pnpbrain-widget.js"
  *     data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
  *     data-backend-url="https://api.pnpbrain.com"
  *     data-bot-name="My Assistant"

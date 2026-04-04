@@ -50,7 +50,11 @@ PNPBrain is designed to be embedded once and reused everywhere: websites, apps, 
 Use this when you want the fastest possible install on any website.
 
 ```html
-<script src="https://pnpbrain.com/embed.js" data-agent-id="YOUR_AGENT_ID"></script>
+<script
+  src="https://cdn.jsdelivr.net/gh/codewithnick/pnpbrain@widget-v0.0.1/apps/widget/dist/pnpbrain-widget.js"
+  data-public-token="YOUR_PUBLIC_CHAT_TOKEN"
+  data-backend-url="https://api.pnpbrain.com"
+></script>
 ```
 
 ### 2) Browser SDK

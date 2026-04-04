@@ -106,33 +106,63 @@ export default function DashboardPage() {
   })();
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    void (async () => {
       try {
-        const [statsRes, usageRes, trendsRes, conversationsRes] = await Promise.all([
+        const [statsRes, usageRes, conversationsRes] = await Promise.all([
           fetchBackend('/api/dashboard/stats'),
           fetchBackend('/api/dashboard/usage'),
-          fetchBackend(`/api/dashboard/trends?days=${trendsDays}`),
           fetchBackend('/api/conversations?limit=6'),
         ]);
 
         if (!statsRes.ok) throw new Error('Failed to load dashboard stats');
         if (!usageRes.ok) throw new Error('Failed to load usage analytics');
-        if (!trendsRes.ok) throw new Error('Failed to load dashboard trends');
         if (!conversationsRes.ok) throw new Error('Failed to load conversation timeline');
 
         const statsJson = (await statsRes.json()) as { data: DashboardStats };
         const usageJson = (await usageRes.json()) as { data: DashboardUsage };
-        const trendsJson = (await trendsRes.json()) as { data: DashboardTrends };
         const conversationsJson = (await conversationsRes.json()) as { data: ConversationSummary[] };
+
+        if (cancelled) return;
 
         setStats(statsJson.data);
         setUsage(usageJson.data);
-        setTrends(trendsJson.data);
         setRecentConversations(conversationsJson.data);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard analytics');
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load dashboard analytics');
+        }
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const trendsRes = await fetchBackend(`/api/dashboard/trends?days=${trendsDays}`);
+        if (!trendsRes.ok) throw new Error('Failed to load dashboard trends');
+
+        const trendsJson = (await trendsRes.json()) as { data: DashboardTrends };
+        if (!cancelled) {
+          setTrends(trendsJson.data);
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load dashboard analytics');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [trendsDays]);
 
   const trendPoints = (trends?.points ?? []).map((point) => ({

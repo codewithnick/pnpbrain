@@ -1,0 +1,80 @@
+name: Provision Widget CDN
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/widget/**'
+      - 'packages/types/src/cdn.ts'
+      - '.github/workflows/widget-cdn-release.yml'
+
+concurrency:
+  group: widget-cdn-provision
+  cancel-in-progress: false
+
+jobs:
+  provision-cdn:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build widget CDN bundle
+        run: pnpm --filter @pnpbrain/widget build:embed
+
+      - name: Resolve widget version metadata
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./apps/widget/package.json').version.replace(/^v/, '')")
+          TAG="widget-v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create version tag if needed
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} already exists. Reusing existing immutable jsDelivr version."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+      - name: Publish or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Widget CDN ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            apps/widget/dist/pnpbrain-widget.js
+            apps/widget/dist/pnpbrain-widget.v${{ steps.version.outputs.version }}.js
+            apps/widget/dist/cdn-manifest.json
+            apps/widget/dist/version.json

@@ -4,8 +4,10 @@
  */
 
 // ─── Re-exports ───────────────────────────────────────────────────────────────
-export * from './agent.js';
-export * from './api.js';
-export * from './knowledge.js';
-export * from './widget.js';
-export * from './user.js';
+export * from './agent';
+export * from './agentNaming';
+export * from './api';
+export * from './cdn';
+export * from './knowledge';
+export * from './widget';
+export * from './user';

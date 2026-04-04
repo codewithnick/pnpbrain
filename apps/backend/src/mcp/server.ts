@@ -73,7 +73,7 @@ function sanitizeAssistantReply(text: string): string {
 
       // Remove narrative leakage that exposes internal tool/function execution details.
       if (
-        /^the output of\s+[`'\"]?[a-zA-Z0-9_:-]+(?:\(\))?[`'\"]?\s+function\s+is\s+used\b/i.test(
+        /^the output of\s+[`'"]?[a-zA-Z0-9_:-]+(?:\(\))?[`'"]?\s+function\s+is\s+used\b/i.test(
           trimmed
         )
       ) {
@@ -81,7 +81,7 @@ function sanitizeAssistantReply(text: string): string {
       }
 
       if (
-        /^the output of\s+[`'\"]?[a-zA-Z0-9_:-]+(?:\(\))?[`'\"]?\s+was\s+used\s+to\s+format\s+this\s+answer\.?$/i.test(
+        /^the output of\s+[`'"]?[a-zA-Z0-9_:-]+(?:\(\))?[`'"]?\s+was\s+used\s+to\s+format\s+this\s+answer\.?$/i.test(
           trimmed
         )
       ) {

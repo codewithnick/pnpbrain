@@ -23,6 +23,32 @@ export interface ChatSendResult {
   transport: ChatTransport;
 }
 
+const TRANSPORT_RETRY_DELAYS_MS = [250, 750] as const;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
+async function runWithRetries<T>(operation: () => Promise<T>, retryDelaysMs: readonly number[]): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt === retryDelaysMs.length) {
+        break;
+      }
+      await delay(retryDelaysMs[attempt] ?? 0);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Transport failed');
+}
+
 function toWsUrl(backendUrl: string): string | null {
   try {
     const parsed = new URL(backendUrl);
@@ -197,19 +223,28 @@ export function createChatClient(config: ChatClientConfig) {
       const wsUrl = toWsUrl(config.backendUrl);
       if (wsUrl) {
         try {
-          const threadId = await runWebSocket(wsUrl, payload, handlers);
+          const threadId = await runWithRetries(
+            () => runWebSocket(wsUrl, payload, handlers),
+            TRANSPORT_RETRY_DELAYS_MS,
+          );
           return threadId
             ? { threadId, transport: 'websocket' }
             : { transport: 'websocket' };
         } catch {
-          const threadId = await runSse(config.backendUrl, payload, handlers);
+          const threadId = await runWithRetries(
+            () => runSse(config.backendUrl, payload, handlers),
+            [TRANSPORT_RETRY_DELAYS_MS[0]],
+          );
           return threadId
             ? { threadId, transport: 'sse' }
             : { transport: 'sse' };
         }
       }
 
-      const threadId = await runSse(config.backendUrl, payload, handlers);
+      const threadId = await runWithRetries(
+        () => runSse(config.backendUrl, payload, handlers),
+        [TRANSPORT_RETRY_DELAYS_MS[0]],
+      );
       return threadId
         ? { threadId, transport: 'sse' }
         : { transport: 'sse' };

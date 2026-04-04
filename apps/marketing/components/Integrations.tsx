@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from 'react';
+import { getPnpbrainWidgetCdnUrls } from '@pnpbrain/types';
 import {
   Box,
   Button,
@@ -21,6 +22,8 @@ type Example = {
   chips: string[];
   snippets: Record<string, string>;
 };
+
+const widgetCdn = getPnpbrainWidgetCdnUrls();
 
 const examples: Example[] = [
   {
@@ -51,11 +54,11 @@ const examples: Example[] = [
     title: 'Wix Custom Code Embed',
     subtitle: 'Wix dashboard -> Settings -> Custom Code',
     description:
-      'Use the same script-tag contract in Wix custom code. Apply to all pages and load in Body - end for best UX.',
-    chips: ['Wix Custom Code', 'All pages', 'Body - end', 'data-public-token'],
+      'Use the same version-pinned jsDelivr script-tag contract in Wix custom code. Apply to all pages and load in Body - end for best UX.',
+    chips: ['Wix Custom Code', 'All pages', 'Body - end', widgetCdn.tag],
     snippets: {
       html: `<script
-  src="https://cdn.pnpbrain.com/widget/pnpbrain-widget.js"
+  src="${widgetCdn.versionedUrl}"
   data-public-token="PUBLIC_CHAT_TOKEN"
   data-backend-url="https://api.pnpbrain.com"
   data-bot-name="Support"
@@ -68,13 +71,13 @@ const examples: Example[] = [
   {
     id: 'widget',
     title: 'Website Widget Embed',
-    subtitle: 'Drop-in script (real embed contract)',
+    subtitle: `Drop-in script (${widgetCdn.provider} + ${widgetCdn.tag})`,
     description:
-      'Uses the same data attributes parsed by the widget embed loader in this repository.',
+      'Uses the same data attributes parsed by the widget embed loader in this repository, now delivered from jsDelivr with automatic version pinning.',
     chips: ['data-public-token', 'data-backend-url', 'data-bot-name', 'data-show-powered-by'],
     snippets: {
       html: `<script
-  src="https://cdn.pnpbrain.com/widget/pnpbrain-widget.js"
+  src="${widgetCdn.versionedUrl}"
   data-public-token="PUBLIC_CHAT_TOKEN"
   data-backend-url="https://api.pnpbrain.com"
   data-bot-name="Support"

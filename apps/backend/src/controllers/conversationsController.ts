@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@pnpbrain/db/client';
 import { conversations, messages } from '@pnpbrain/db/schema';
 import { requireBusinessAuth } from '../middleware/auth';
@@ -45,55 +45,70 @@ export class ConversationsController {
     }
 
     const conversationIds = conversationRows.map((row) => row.id);
-    const messageRows = await db
+    const conversationStatsRows = await db
       .select({
-        id: messages.id,
+        conversationId: messages.conversationId,
+        messageCount: sql<number>`count(*)::int`,
+        userMessageCount: sql<number>`count(*) filter (where ${messages.role} = 'user')::int`,
+        assistantMessageCount: sql<number>`count(*) filter (where ${messages.role} = 'assistant')::int`,
+        firstMessageAt: sql<Date | null>`min(${messages.createdAt})`,
+        lastMessageAt: sql<Date | null>`max(${messages.createdAt})`,
+        firstUserMessageAt: sql<Date | null>`min(case when ${messages.role} = 'user' then ${messages.createdAt} end)`,
+        firstAssistantMessageAt: sql<Date | null>`min(case when ${messages.role} = 'assistant' then ${messages.createdAt} end)`,
+      })
+      .from(messages)
+      .where(inArray(messages.conversationId, conversationIds))
+      .groupBy(messages.conversationId);
+
+    const rankedMessageRows = db
+      .select({
         conversationId: messages.conversationId,
         role: messages.role,
         content: messages.content,
         createdAt: messages.createdAt,
+        rowNumber: sql<number>`row_number() over (partition by ${messages.conversationId} order by ${messages.createdAt} desc)`.as('rowNumber'),
       })
       .from(messages)
       .where(inArray(messages.conversationId, conversationIds))
-      .orderBy(desc(messages.createdAt));
+      .as('ranked_message_rows');
 
-    const grouped = new Map<string, typeof messageRows>();
-    for (const row of messageRows) {
-      const rows = grouped.get(row.conversationId) ?? [];
-      rows.push(row);
-      grouped.set(row.conversationId, rows);
-    }
+    const latestMessageRows = await db
+      .select({
+        conversationId: rankedMessageRows.conversationId,
+        role: rankedMessageRows.role,
+        content: rankedMessageRows.content,
+        createdAt: rankedMessageRows.createdAt,
+      })
+      .from(rankedMessageRows)
+      .where(eq(rankedMessageRows.rowNumber, 1));
+
+    const statsByConversationId = new Map(
+      conversationStatsRows.map((row) => [row.conversationId, row] as const),
+    );
+    const latestMessageByConversationId = new Map(
+      latestMessageRows.map((row) => [row.conversationId, row] as const),
+    );
 
     const data = conversationRows.map((conversation) => {
-      const rows = grouped.get(conversation.id) ?? [];
-      const lastMessage = rows[0];
-      const orderedRows = [...rows].reverse();
-      const firstMessage = orderedRows[0];
-      const firstUserMessage = orderedRows.find((row) => row.role === 'user');
-      const firstAssistantMessage = firstUserMessage
-        ? orderedRows.find(
-            (row) => row.role === 'assistant' && row.createdAt >= firstUserMessage.createdAt,
-          )
-        : orderedRows.find((row) => row.role === 'assistant');
+      const stats = statsByConversationId.get(conversation.id);
+      const lastMessage = latestMessageByConversationId.get(conversation.id);
       const assistantResponseMs =
-        firstUserMessage && firstAssistantMessage
-          ? Math.max(0, firstAssistantMessage.createdAt.getTime() - firstUserMessage.createdAt.getTime())
+        stats?.firstUserMessageAt && stats.firstAssistantMessageAt
+          ? Math.max(0, stats.firstAssistantMessageAt.getTime() - stats.firstUserMessageAt.getTime())
           : null;
       const conversationDurationMs =
-        firstMessage && lastMessage
-          ? Math.max(0, lastMessage.createdAt.getTime() - firstMessage.createdAt.getTime())
+        stats?.firstMessageAt && stats.lastMessageAt
+          ? Math.max(0, stats.lastMessageAt.getTime() - stats.firstMessageAt.getTime())
           : null;
-      const userMessages = rows.filter((row) => row.role === 'user').length;
-      const assistantMessages = rows.filter((row) => row.role === 'assistant').length;
 
       return {
         id: conversation.id,
         sessionId: conversation.sessionId,
         createdAt: conversation.createdAt.toISOString(),
         updatedAt: conversation.updatedAt.toISOString(),
-        messageCount: rows.length,
-        userMessageCount: userMessages,
-        assistantMessageCount: assistantMessages,
+        messageCount: stats?.messageCount ?? 0,
+        userMessageCount: stats?.userMessageCount ?? 0,
+        assistantMessageCount: stats?.assistantMessageCount ?? 0,
         firstResponseMs: assistantResponseMs,
         conversationDurationMs,
         preview: lastMessage?.content.slice(0, 160) ?? '',

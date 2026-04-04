@@ -15,7 +15,7 @@ import { businessCreditLedger, businesses } from '@pnpbrain/db/schema';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import type { Business } from '@pnpbrain/db';
 
-export const TOP_UP_MEDIUMS = ['any', 'card', 'wallet', 'bank_debit', 'razorpay', 'manual'] as const;
+export const TOP_UP_MEDIUMS = ['any', 'card', 'wallet', 'bank_debit', 'razorpay', 'wise', 'manual'] as const;
 export type TopUpMedium = (typeof TOP_UP_MEDIUMS)[number];
 
 export const PLAN_TIERS = ['freemium', 'lite', 'basic', 'pro', 'custom'] as const;
@@ -454,6 +454,8 @@ function getStripePaymentMethodTypes(medium: TopUpMedium): Stripe.Checkout.Sessi
     case 'manual':
     case 'razorpay':
       return ['card'];
+    case 'wise':
+      return ['us_bank_account'];
     default:
       return ['card'];
   }

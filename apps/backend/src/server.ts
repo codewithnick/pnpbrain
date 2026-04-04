@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { loadBackendEnv } from './lib/loadEnv';
+import { logger, requestLoggingMiddleware } from './lib/logger';
 import { corsMwfn } from './middleware/cors';
 import { errorHandler } from './middleware/errorHandler';
 import agentRoutes from './routes/agent';
@@ -28,13 +29,18 @@ loadBackendEnv();
 const app: express.Express = express();
 const PORT = process.env['PORT'] ?? 3011;
 
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
 // ─── Middleware ────────────────────────────────────────────────────────────
+
+app.use(requestLoggingMiddleware);
 
 // Stripe webhooks require raw request bytes (must run before JSON parser)
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }), webhookRouter);
 
 // Parse JSON bodies
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // CORS
 app.use(corsMwfn);
@@ -107,8 +113,9 @@ app.post('/mcp', mcpRateLimiter, express.json(), async (req: express.Request, re
   const server = createMcpServer({ business, agent });
 
   res.on('close', () => {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    server.close().catch((err: unknown) => console.error('[mcp] server close error:', err));
+    void server.close().catch((err: unknown) => {
+      logger.warn('mcp_server_close_failed', { err });
+    });
   });
 
   // The SDK's Transport interface uses optional `onclose` but our strict tsconfig flags
@@ -146,8 +153,11 @@ httpServer.on('upgrade', (req, socket, head) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`[backend] Express server running on http://localhost:${PORT}`);
-  console.log(`[backend] WebSocket chat endpoint running on ws://localhost:${PORT}/ws/agent`);
+  logger.info('backend_server_started', {
+    port: PORT,
+    httpUrl: `http://localhost:${PORT}`,
+    wsUrl: `ws://localhost:${PORT}/ws/agent`,
+  });
 });
 
 export default app;

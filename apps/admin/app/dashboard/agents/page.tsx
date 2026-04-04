@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { getAgentNamingError, toRouteSlug } from '@pnpbrain/types';
 import { fetchBackend, getSelectedAgentId, setSelectedAgentId } from '@/lib/supabase';
 import type { Agent } from '@/lib/api-types';
 
@@ -8,16 +9,6 @@ interface AgentCreatePayload {
   name: string;
   slug: string;
   description?: string;
-}
-
-function toSlug(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }
 
 export default function AgentsPage() {
@@ -31,7 +22,11 @@ export default function AgentsPage() {
   const [description, setDescription] = useState('');
   const [selectedAgentIdState, setSelectedAgentIdState] = useState<string | null>(null);
 
-  const canCreate = useMemo(() => name.trim().length >= 2 && slug.trim().length >= 2, [name, slug]);
+  const namingError = useMemo(() => getAgentNamingError({ name, slug }), [name, slug]);
+  const canCreate = useMemo(
+    () => name.trim().length >= 2 && slug.trim().length >= 2 && !namingError,
+    [name, slug, namingError],
+  );
 
   async function loadAgents() {
     const res = await fetchBackend('/api/agents');
@@ -76,7 +71,7 @@ export default function AgentsPage() {
       if (prev.trim().length > 0) {
         return prev;
       }
-      return toSlug(name);
+      return toRouteSlug(name);
     });
   }, [name]);
 
@@ -145,7 +140,7 @@ export default function AgentsPage() {
     setSelectedAgentId(agentId);
     setSelectedAgentIdState(agentId);
     setSuccess('Agent selected. Refreshing dashboard context...');
-    window.location.reload();
+    globalThis.location.reload();
   }
 
   if (loading) {
@@ -177,8 +172,11 @@ export default function AgentsPage() {
         <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Create agent</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-300">Name</label>
+            <label htmlFor="agent-name" className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-300">
+              Name
+            </label>
             <input
+              id="agent-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Support Agent"
@@ -186,18 +184,35 @@ export default function AgentsPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-300">Slug</label>
+            <label htmlFor="agent-slug" className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-300">
+              Slug
+            </label>
             <input
+              id="agent-slug"
               value={slug}
-              onChange={(event) => setSlug(toSlug(event.target.value))}
+              onChange={(event) => setSlug(toRouteSlug(event.target.value))}
               placeholder="support-agent"
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </div>
         </div>
+        {namingError ? (
+          <p className="text-sm text-red-600 dark:text-red-300">{namingError}</p>
+        ) : (
+          <p className="text-xs text-gray-500 dark:text-slate-400">
+            Reserved route-like names such as <code>docs</code>, <code>contact-us</code>, and{' '}
+            <code>how-it-works</code> are blocked.
+          </p>
+        )}
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-300">Description</label>
+          <label
+            htmlFor="agent-description"
+            className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-300"
+          >
+            Description
+          </label>
           <textarea
+            id="agent-description"
             rows={3}
             value={description}
             onChange={(event) => setDescription(event.target.value)}

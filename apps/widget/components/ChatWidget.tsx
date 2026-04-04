@@ -7,7 +7,7 @@
  * Communicates with the PNPBrain backend via streaming SSE fetch.
  */
 
-import { Fragment, useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Fragment, memo, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { WidgetConfig, StreamEvent } from '@pnpbrain/types';
 import { createChatClient } from '@pnpbrain/web-sdk';
 
@@ -152,7 +152,9 @@ function renderInlineFormatting(text: string) {
   });
 }
 
-function RichMessageContent({ content }: { content: string }) {
+const RichMessageContent = memo(function RichMessageContent({
+  content,
+}: Readonly<{ content: string }>) {
   const blocks = parseContentBlocks(content);
 
   return (
@@ -186,7 +188,7 @@ function RichMessageContent({ content }: { content: string }) {
       })}
     </div>
   );
-}
+});
 
 export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
   const {
@@ -252,6 +254,8 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
   const lastTraceRef = useRef('');
+  const tokenBufferRef = useRef('');
+  const tokenFlushTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const chatClient = useMemo(
     () =>
       createChatClient({
@@ -280,6 +284,45 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
     []
   );
 
+  const flushAssistantTokens = useCallback(
+    (assistantId: string) => {
+      if (tokenFlushTimerRef.current !== null) {
+        globalThis.clearTimeout(tokenFlushTimerRef.current);
+        tokenFlushTimerRef.current = null;
+      }
+
+      const buffered = tokenBufferRef.current;
+      if (!buffered) return;
+
+      tokenBufferRef.current = '';
+      updateAssistantMessage(assistantId, (message) => ({
+        ...message,
+        content: message.content + buffered,
+      }));
+    },
+    [updateAssistantMessage]
+  );
+
+  const queueAssistantToken = useCallback(
+    (assistantId: string, token: string) => {
+      tokenBufferRef.current += token;
+      if (tokenFlushTimerRef.current !== null) return;
+
+      tokenFlushTimerRef.current = globalThis.setTimeout(() => {
+        flushAssistantTokens(assistantId);
+      }, 60);
+    },
+    [flushAssistantTokens]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (tokenFlushTimerRef.current !== null) {
+        globalThis.clearTimeout(tokenFlushTimerRef.current);
+      }
+    };
+  }, []);
+
   // Auto-scroll to the bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -288,6 +331,12 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || thinking) return;
+
+      tokenBufferRef.current = '';
+      if (tokenFlushTimerRef.current !== null) {
+        globalThis.clearTimeout(tokenFlushTimerRef.current);
+        tokenFlushTimerRef.current = null;
+      }
 
       const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text };
       setMessages((prev) => [...prev, userMsg]);
@@ -302,14 +351,12 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
 
       const applyEvent = (event: StreamEvent) => {
         if (event.type === 'token') {
-          updateAssistantMessage(assistantId, (message) => ({
-            ...message,
-            content: message.content + event.token,
-          }));
+          queueAssistantToken(assistantId, event.token);
           return;
         }
 
         if (event.type === 'done') {
+          flushAssistantTokens(assistantId);
           setThreadId(event.threadId);
           updateAssistantMessage(assistantId, (message) => ({
             ...message,
@@ -335,6 +382,7 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
         }
 
         if (event.type === 'error') {
+          flushAssistantTokens(assistantId);
           updateAssistantMessage(assistantId, (message) => ({
             ...message,
             content: `Sorry, something went wrong: ${event.error}`,
@@ -363,6 +411,7 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
           setThreadId(result.threadId);
         }
       } catch (err) {
+        flushAssistantTokens(assistantId);
         const errorText = err instanceof Error ? err.message : String(err);
         updateAssistantMessage(assistantId, (message) => ({
           ...message,
@@ -372,7 +421,7 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
         setThinking(false);
       }
     },
-    [chatClient, threadId, thinking, appendTrace, updateAssistantMessage]
+    [chatClient, threadId, thinking, appendTrace, flushAssistantTokens, queueAssistantToken, updateAssistantMessage]
   );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -515,6 +564,9 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
                 ↑
               </button>
             </div>
+            <p className="mt-2 text-center text-[10px] text-gray-400">
+              Conversation history is saved so you can revisit it later.
+            </p>
             {showPoweredBy ? (
               <p className="text-center text-[10px] text-gray-300 mt-2">Powered by PNPBrain</p>
             ) : null}

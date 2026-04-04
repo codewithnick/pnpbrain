@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@pnpbrain/db/client';
-import { agents } from '@pnpbrain/db/schema';
+import { agents, businesses } from '@pnpbrain/db/schema';
+import { getAgentNamingError, normalizeAgentLookupName } from '@pnpbrain/types';
 import { requireBusinessAuth } from '../middleware/auth';
 import { generateAgentApiKey } from '../lib/agents';
 import { parseAllowedDomains } from '../lib/business';
@@ -13,18 +14,19 @@ import {
 } from '../lib/businessSkills';
 
 const createAgentSchema = z.object({
-  name: z.string().min(2).max(80),
+  name: z.string().trim().min(2).max(80),
   slug: z
     .string()
+    .trim()
     .min(2)
     .max(40)
     .regex(/^[a-z0-9-]+$/, 'Slug may only contain lowercase letters, numbers, and hyphens'),
-  description: z.string().max(500).optional(),
+  description: z.string().trim().max(500).optional(),
 });
 
 const updateAgentSchema = z.object({
-  name: z.string().min(2).max(80).optional(),
-  description: z.string().max(500).optional(),
+  name: z.string().trim().min(2).max(80).optional(),
+  description: z.string().trim().max(500).optional(),
   enabledSkills: z.array(z.string()).max(32).optional(),
   llmProvider: z.string().max(50).optional(),
   llmModel: z.string().max(120).optional(),
@@ -102,15 +104,43 @@ export class AgentsController {
       return res.status(400).json({ ok: false, error: parsed.error.issues.map((i) => i.message).join(', ') });
     }
 
-    const db = getDb();
-    const [slugConflict] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.businessId, auth.businessId), eq(agents.slug, parsed.data.slug)))
-      .limit(1);
+    const namingError = getAgentNamingError({
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+    });
+    if (namingError) {
+      return res.status(400).json({ ok: false, error: namingError });
+    }
 
-    if (slugConflict) {
-      return res.status(409).json({ ok: false, error: 'That agent slug already exists for this business.' });
+    const db = getDb();
+    const normalizedName = normalizeAgentLookupName(parsed.data.name);
+    const [businessSlugConflictRows, agentSlugConflictRows, nameConflictRows] = await Promise.all([
+      db
+        .select({ id: businesses.id })
+        .from(businesses)
+        .where(eq(businesses.slug, parsed.data.slug))
+        .limit(1),
+      db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.slug, parsed.data.slug))
+        .limit(1),
+      db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.businessId, auth.businessId), sql`lower(${agents.name}) = ${normalizedName}`))
+        .limit(1),
+    ]);
+
+    if (businessSlugConflictRows[0] || agentSlugConflictRows[0]) {
+      return res.status(409).json({
+        ok: false,
+        error: 'That agent slug is already taken or conflicts with an existing public URL. Choose another.',
+      });
+    }
+
+    if (nameConflictRows[0]) {
+      return res.status(409).json({ ok: false, error: 'An agent with that name already exists for this business.' });
     }
 
     const [created] = await db
@@ -155,6 +185,30 @@ export class AgentsController {
 
     if (!target) {
       return res.status(404).json({ ok: false, error: 'Agent not found' });
+    }
+
+    if (parsed.data.name !== undefined) {
+      const namingError = getAgentNamingError({ name: parsed.data.name });
+      if (namingError) {
+        return res.status(400).json({ ok: false, error: namingError });
+      }
+
+      const normalizedName = normalizeAgentLookupName(parsed.data.name);
+      const [nameConflict] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.businessId, auth.businessId),
+            ne(agents.id, agentId),
+            sql`lower(${agents.name}) = ${normalizedName}`,
+          ),
+        )
+        .limit(1);
+
+      if (nameConflict) {
+        return res.status(409).json({ ok: false, error: 'An agent with that name already exists for this business.' });
+      }
     }
 
     if (parsed.data.isDefault === true) {

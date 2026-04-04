@@ -8,7 +8,7 @@
     "build": "next build",
     "build:embed": "node scripts/build-embed.mjs",
     "start": "next start --port 3013",
-    "lint": "echo 'Skipping ESLint for Next.js app'",
+    "lint": "next lint",
     "type-check": "tsc --noEmit",
     "clean": "rimraf .next dist"
   },

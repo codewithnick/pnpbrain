@@ -162,7 +162,7 @@ function looksLikeReadableText(text: string): boolean {
   if (!text.trim()) return false;
 
   const sample = text.slice(0, 2000);
-  if ((sample.match(/\u0000/g) ?? []).length > 0) return false;
+  if (sample.includes('\u0000')) return false;
 
   const printableCount = (sample.match(/[\t\n\r\x20-\x7E\u00A0-\uFFFF]/g) ?? []).length;
   return printableCount / Math.max(sample.length, 1) > 0.75;

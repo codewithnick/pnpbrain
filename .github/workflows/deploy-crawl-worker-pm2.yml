@@ -1,0 +1,84 @@
+name: Deploy Crawl Worker (PM2)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/crawl-worker/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+      - 'tsconfig.base.json'
+      - 'ecosystem.config.cjs'
+      - '.github/workflows/deploy-crawl-worker-pm2.yml'
+
+concurrency:
+  group: deploy-crawl-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check crawl worker
+        run: pnpm --filter crawl-worker type-check
+
+      - name: Build crawl worker
+        run: pnpm --filter crawl-worker build
+
+      - name: Deploy and restart PM2 process
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.WORKER_HOST }}
+          username: ${{ secrets.WORKER_USER }}
+          key: ${{ secrets.WORKER_SSH_KEY }}
+          port: ${{ secrets.WORKER_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            if [ -z "${{ secrets.WORKER_APP_PATH }}" ]; then
+              echo "WORKER_APP_PATH secret is required"
+              exit 1
+            fi
+
+            cd "${{ secrets.WORKER_APP_PATH }}"
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            corepack enable
+            corepack prepare pnpm@9.15.4 --activate
+            pnpm install --frozen-lockfile
+            pnpm --filter crawl-worker build
+
+            if ! command -v pm2 >/dev/null 2>&1; then
+              npm install -g pm2
+            fi
+
+            pm2 startOrRestart ecosystem.config.cjs --only crawl-worker --update-env
+            pm2 save
+            pm2 status crawl-worker

@@ -7,7 +7,7 @@
     "dev": "next dev --port 3012",
     "build": "next build",
     "start": "next start --port 3012",
-    "lint": "echo 'Skipping ESLint for Next.js app'",
+    "lint": "next lint",
     "type-check": "tsc --noEmit",
     "clean": "rimraf .next"
   },
@@ -16,6 +16,7 @@
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
+    "@pnpbrain/types": "workspace:*",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.1",
     "next": "^15.1.7",

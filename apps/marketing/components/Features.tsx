@@ -18,7 +18,7 @@ const features = [
     icon: '💾',
     title: 'Long-Term Customer Memory',
     description:
-      'The agent quietly extracts facts from conversations and remembers them across sessions — so customers never repeat themselves.',
+      'PNPBrain stores conversation history, keeps useful context across sessions, and lets customers revisit past chats without starting over.',
   },
   {
     icon: '🔌',

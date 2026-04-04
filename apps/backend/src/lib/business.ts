@@ -3,7 +3,7 @@
  * Used by chat + knowledge routes to load allowed domains, bot name, etc.
  */
 
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getDb } from '@pnpbrain/db/client';
 import {
   businesses,

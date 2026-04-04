@@ -148,6 +148,13 @@ export interface LeadHandoffIntegrationConfig {
   };
 }
 
+export interface ResolvedAgentIntegrations {
+  integrations: IntegrationStatus[];
+  meetingIntegration: MeetingIntegrationConfig;
+  supportIntegration: SupportIntegrationConfig;
+  leadHandoffIntegration: LeadHandoffIntegrationConfig;
+}
+
 // ---------------------------------------------------------------------------
 // Integration helpers
 // ---------------------------------------------------------------------------
@@ -307,16 +314,33 @@ function pickLeadHandoffIntegration(rows: IntegrationRow[]): LeadHandoffIntegrat
   };
 }
 
+export async function getResolvedIntegrationsForAgentScope(input: {
+  businessId?: string;
+  agentId?: string | null;
+}): Promise<ResolvedAgentIntegrations> {
+  if (input.agentId === undefined || input.agentId === null) {
+    return {
+      integrations: [],
+      meetingIntegration: { provider: 'none' },
+      supportIntegration: { provider: 'none' },
+      leadHandoffIntegration: { provider: 'none' },
+    };
+  }
+
+  const agentRows = await getAgentIntegrationRows(input.agentId);
+  return {
+    integrations: mapIntegrationRows(agentRows),
+    meetingIntegration: pickMeetingIntegration(agentRows),
+    supportIntegration: pickSupportIntegration(agentRows),
+    leadHandoffIntegration: pickLeadHandoffIntegration(agentRows),
+  };
+}
+
 export async function getAllIntegrationsForAgentScope(input: {
   businessId?: string;
   agentId?: string | null;
 }): Promise<IntegrationStatus[]> {
-  if (input.agentId === undefined || input.agentId === null) {
-    return [];
-  }
-
-  const agentRows = await getAgentIntegrationRows(input.agentId);
-  return mapIntegrationRows(agentRows);
+  return (await getResolvedIntegrationsForAgentScope(input)).integrations;
 }
 
 export async function upsertIntegrationForAgent(
@@ -395,34 +419,19 @@ export async function getMeetingIntegrationForAgentScope(input: {
   businessId?: string;
   agentId?: string | null;
 }): Promise<MeetingIntegrationConfig> {
-  if (!input.agentId) {
-    return { provider: 'none' };
-  }
-
-  const agentRows = await getAgentIntegrationRows(input.agentId);
-  return pickMeetingIntegration(agentRows);
+  return (await getResolvedIntegrationsForAgentScope(input)).meetingIntegration;
 }
 
 export async function getSupportIntegrationForAgentScope(input: {
   businessId?: string;
   agentId?: string | null;
 }): Promise<SupportIntegrationConfig> {
-  if (!input.agentId) {
-    return { provider: 'none' };
-  }
-
-  const agentRows = await getAgentIntegrationRows(input.agentId);
-  return pickSupportIntegration(agentRows);
+  return (await getResolvedIntegrationsForAgentScope(input)).supportIntegration;
 }
 
 export async function getLeadHandoffIntegrationForAgentScope(input: {
   businessId?: string;
   agentId?: string | null;
 }): Promise<LeadHandoffIntegrationConfig> {
-  if (input.agentId === undefined || input.agentId === null) {
-    return { provider: 'none' };
-  }
-
-  const agentRows = await getAgentIntegrationRows(input.agentId);
-  return pickLeadHandoffIntegration(agentRows);
+  return (await getResolvedIntegrationsForAgentScope(input)).leadHandoffIntegration;
 }
