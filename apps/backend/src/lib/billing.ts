@@ -77,7 +77,7 @@ function getStripePriceIdForPlan(tier: PlanTier): string {
     throw new Error('This plan does not use self-serve checkout');
   }
 
-  const envMap: Record<Exclude<PlanTier, 'freemium' | 'custom'>, string | undefined> = {
+  const envMap: Partial<Record<Exclude<PlanTier, 'freemium' | 'custom'>, string | undefined>> = {
     lite: process.env['STRIPE_PRICE_ID_LITE'],
     basic: process.env['STRIPE_PRICE_ID_BASIC'],
     pro: process.env['STRIPE_PRICE_ID_PRO'],
@@ -97,7 +97,7 @@ function getStripePriceIdForPlan(tier: PlanTier): string {
 function resolvePlanFromStripePrice(priceId: string | null | undefined): PlanTier | null {
   if (!priceId) return null;
 
-  const idByPlan: Array<[PlanTier, string | undefined]> = [
+  const idByPlan: Array<[Exclude<PlanTier, 'freemium' | 'custom'>, string | undefined]> = [
     ['lite', process.env['STRIPE_PRICE_ID_LITE']],
     ['basic', process.env['STRIPE_PRICE_ID_BASIC']],
     ['pro', process.env['STRIPE_PRICE_ID_PRO']],
@@ -149,7 +149,7 @@ export async function refreshBusinessUsageCycleIfNeeded(business: Business): Pro
 
 export async function setBusinessPlanTier(
   businessId: string,
-  planTier: PlanTier
+  planTier: PlanTier,
 ): Promise<Business | null> {
   const plan = getPlanDefinition(planTier);
   const now = new Date();
@@ -288,7 +288,7 @@ export async function createCheckoutSession(
   business: Business,
   email: string,
   returnUrl: string,
-  planTier: PlanTier
+  planTier: PlanTier,
 ): Promise<string> {
   const priceId = getStripePriceIdForPlan(planTier);
 
@@ -345,7 +345,6 @@ export async function createPortalSession(
  */
 export async function recordMessageUsage(business: Business, agentId?: string): Promise<void> {
   const plan = getPlanDefinition(business.planTier);
-
   if (plan.monthlyMessages === null) {
     await getDb()
       .update(businesses)
@@ -355,7 +354,6 @@ export async function recordMessageUsage(business: Business, agentId?: string): 
         updatedAt: sql`now()`,
       })
       .where(eq(businesses.id, business.id));
-
     return;
   }
 
@@ -658,7 +656,7 @@ export async function settleRazorpayPaymentCapture(event: RazorpayWebhookPayload
   if (event.event !== 'payment.captured') return;
 
   const payment = event.payload?.payment?.entity;
-  if (payment?.status !== 'captured') return;
+  if (!payment || payment.status !== 'captured') return;
 
   const kind = payment.notes?.['kind'];
   if (kind !== 'credit_top_up') return;

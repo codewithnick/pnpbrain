@@ -15,7 +15,7 @@ export type UserRole = 'super_admin' | 'business_owner' | 'viewer';
  */
 export type BusinessMemberRole = 'owner' | 'admin' | 'member' | 'viewer';
 
-export interface GcfisUser {
+export interface PnpbrainUser {
   id: string;
   email: string;
   role: UserRole;

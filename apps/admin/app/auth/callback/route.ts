@@ -62,7 +62,7 @@ async function ensureBusinessProvisionedServerSide(accessToken: string, email: s
 
   if (!registerResponse.ok && registerResponse.status !== 200 && registerResponse.status !== 201) {
     const payload = (await registerResponse.json().catch(() => ({}))) as { error?: string };
-    throw new Error(payload.error ?? 'Failed to provision business');
+    throw new Error(payload.error ?? `Failed to provision business ${payload.error ? `: ${payload.error}` : 'unknown error'}`);
   }
 }
 

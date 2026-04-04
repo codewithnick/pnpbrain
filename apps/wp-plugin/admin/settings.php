@@ -1,7 +1,7 @@
 <?php
 /**
  * Admin settings page template for PNpbrain Widget.
- * Included by pnpbrain_render_settings_page() in pnpbrain-widget.php.
+ * Included by `pnpbrain_render_settings_page()` in `pnpbrain-widget.php`.
  * All variables are already declared in that function scope.
  *
  * @var string  $backend_url

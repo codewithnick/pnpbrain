@@ -3,16 +3,16 @@
  *
  * Workflow:
  *   1. Build the widget embed bundle (apps/widget) via esbuild IIFE.
- *   2. Copy the resulting dist/pnpbrain-widget.js into this plugin's assets/ folder.
- *   3. Zip the entire plugin folder into dist/pnpbrain-widget.zip (WordPress-ready).
+ *   2. Copy the resulting `dist/pnpbrain-widget.js` into this plugin's `assets/` folder.
+ *   3. Zip the entire plugin folder into `dist/pnpbrain-widget.zip` (WordPress-ready).
  *
  * Usage (from repo root):
  *   pnpm --filter @pnpbrain/wp-plugin build
  *   OR directly:
- *   node apps/backend/wp-plugin/build.mjs
+ *   node apps/wp-plugin/build.mjs
  *
  * Output:
- *   apps/backend/wp-plugin/dist/pnpbrain-widget.zip
+ *   apps/wp-plugin/dist/pnpbrain-widget.zip
  */
 
 import { execSync }                   from 'node:child_process';
@@ -120,7 +120,7 @@ const useNativeZip = await (async () => {
 })();
 
 if ( useNativeZip ) {
-    // Build from inside the plugin dir so the zip contains pnpbrain-widget/* paths.
+    // Build from inside the plugin dir so the zip contains `pnpbrain-widget/*` paths.
     const fileList = allFiles.map( f => JSON.stringify( f.relative ) ).join( ' ' );
     execSync(
         `zip -9 -r ${JSON.stringify( ZIP_PATH )} ${fileList}`,

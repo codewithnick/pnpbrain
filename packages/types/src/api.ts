@@ -2,7 +2,7 @@
  * REST API request/response shapes — shared between backend, widget, and admin.
  */
 
-import type { ChatMessage } from './agent.js';
+import type { ChatMessage } from './agent';
 
 // ─── /api/agent/chat ──────────────────────────────────────────────────────────
 
@@ -169,7 +169,7 @@ export interface MemoryFact {
 
 // ─── /api/team/* ─────────────────────────────────────────────────────────────
 
-import type { BusinessMemberRole } from './user.js';
+import type { BusinessMemberRole } from './user';
 
 export interface TeamMember {
   id: string;

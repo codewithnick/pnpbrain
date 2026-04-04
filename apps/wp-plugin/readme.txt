@@ -12,7 +12,7 @@ Embed the PNpbrain AI chat widget on any WordPress site with zero configuration.
 
 == Description ==
 
-PNpbrain Widget integrates the General Customer Facing Intelligent System directly into your WordPress site.
+PNpbrain Widget integrates the PNpbrain assistant directly into your WordPress site.
 
 **Features:**
 * One-line embed via shortcode `[pnpbrain_widget]`

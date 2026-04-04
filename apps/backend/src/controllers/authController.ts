@@ -130,7 +130,7 @@ export class AuthController {
           requestedSlug: parsed.data.slug,
           error,
         });
-        return res.status(500).json({ ok: false, error: 'Failed to provision business' });
+        return res.status(500).json({ ok: false, error: `Failed to provision business : ${error instanceof Error ? error.message : 'Unknown error'}` });
       }
 
       logger.info('auth_register_business_created', {
@@ -176,7 +176,7 @@ export class AuthController {
         requestedSlug: parsed.data.slug,
         error,
       });
-      return res.status(500).json({ ok: false, error: 'Failed to provision business' });
+      return res.status(500).json({ ok: false, error: `Failed to provision business : ${error instanceof Error ? error.message : 'Unknown error'}` });
     }
   };
 }

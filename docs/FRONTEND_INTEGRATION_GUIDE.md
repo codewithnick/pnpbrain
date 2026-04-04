@@ -2,21 +2,11 @@
 
 This guide shows how to connect any frontend to PNpbrain while keeping the same backend agent logic.
 
-For a broader plug-and-play matrix that includes messaging channels and backend languages, see [PLUG_AND_PLAY_SOLUTIONS.md](PLUG_AND_PLAY_SOLUTIONS.md).
-
 ## Supported Transports
 
 - WebSocket endpoint: /ws/agent
 - SSE endpoint: POST /api/agent/chat
-- Shared browser SDK: @pnpbrain/web-sdk (auto WebSocket fallback to SSE)
-
-## Quick Decision Guide
-
-- Use the widget or hosted chat page when you want the fastest launch.
-- Use the browser SDK when you need a custom frontend.
-- Use the SSE endpoint when your network blocks WebSockets.
-- Use the WebSocket endpoint when you need lower latency or live typing feedback.
-- Use `x-api-key` only from trusted server-side code.
+- Shared browser SDK: `@pnpbrain/web-sdk` (auto WebSocket fallback to SSE)
 
 ## Auth Models
 
@@ -27,7 +17,7 @@ For a broader plug-and-play matrix that includes messaging channels and backend 
 
 Install:
 
-- pnpm add @pnpbrain/web-sdk
+- `pnpm add @pnpbrain/web-sdk`
 
 Create client:
 
