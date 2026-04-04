@@ -1,6 +1,7 @@
 'use client';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getDirectBackendBaseUrl } from '@/lib/backend-url';
 import { createClient as createSupabaseBrowserClient } from '@/utils/supabase/client';
 
 let supabaseClient: SupabaseClient | null = null;
@@ -26,16 +27,7 @@ export function getSupabaseBrowserClient(): SupabaseClient {
 }
 
 export function getBackendUrl(): string {
-  const configured = process.env['NEXT_PUBLIC_BACKEND_URL']?.trim();
-  if (configured) {
-    return configured.replace(/\/+$/, '');
-  }
-
-  if (globalThis.window !== undefined && globalThis.window.location.hostname.endsWith('pnpbrain.com')) {
-    return 'https://api.pnpbrain.com';
-  }
-
-  return 'http://localhost:3011';
+  return getDirectBackendBaseUrl();
 }
 
 function buildBackendRequestUrl(path: string): string {

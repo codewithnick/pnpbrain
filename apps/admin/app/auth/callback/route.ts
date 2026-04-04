@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import { logAuthError, logAuthInfo, logAuthWarn, maskEmail } from '@/lib/auth-debug';
+import { getDirectBackendBaseUrl, getDirectBackendHost } from '@/lib/backend-url';
 import { buildAdminUrl } from '@/lib/public-url';
 import { createClient } from '@/utils/supabase/server';
 
@@ -22,54 +23,8 @@ function slugifyBusinessName(value: string): string {
   return normalized || 'business';
 }
 
-function normalizeBackendBaseUrl(value?: string | null): string | null {
-  const normalized = value?.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  return normalized.replace(/\/+$/, '');
-}
-
-function getBackendBaseUrls(): string[] {
-  const configuredValues = [
-    process.env['BACKEND_INTERNAL_URL'],
-    process.env['BACKEND_PUBLIC_URL'],
-    process.env['NEXT_PUBLIC_BACKEND_URL'],
-    process.env['NODE_ENV'] === 'production' ? 'https://api.pnpbrain.com' : null,
-    'http://localhost:3011',
-  ];
-
-  const normalizedValues = configuredValues
-    .map((value) => normalizeBackendBaseUrl(value))
-    .filter((value): value is string => Boolean(value));
-
-  return [...new Set(normalizedValues)];
-}
-
-function isMissingVercelDeploymentResponse(response: Response): boolean {
-  if (response.status !== 404) {
-    return false;
-  }
-
-  const vercelError = response.headers.get('x-vercel-error')?.toUpperCase();
-  const server = response.headers.get('server')?.toLowerCase();
-  const responseHost = (() => {
-    try {
-      return new URL(response.url).hostname.toLowerCase();
-    } catch {
-      return '';
-    }
-  })();
-
-  return vercelError === 'DEPLOYMENT_NOT_FOUND'
-    || responseHost.endsWith('.vercel.app')
-    || server === 'vercel';
-}
-
 function shouldRetryProvisionResponse(response: Response): boolean {
-  return isMissingVercelDeploymentResponse(response)
-    || response.status === 408
+  return response.status === 408
     || response.status === 425
     || response.status === 429
     || response.status >= 500;
@@ -79,35 +34,28 @@ async function waitForRetry(delayMs: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-async function fetchBackendWithFallback(path: string, init: RequestInit = {}): Promise<Response> {
-  let lastResponse: Response | null = null;
+async function fetchBackendDirect(path: string, init: RequestInit = {}): Promise<Response> {
+  const requestUrl = new URL(path, `${getDirectBackendBaseUrl()}/`).toString();
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    for (const baseUrl of getBackendBaseUrls()) {
-      try {
-        const response = await fetch(new URL(path, `${baseUrl}/`).toString(), {
-          ...init,
-          cache: 'no-store',
-        });
+    try {
+      const response = await fetch(requestUrl, {
+        ...init,
+        cache: 'no-store',
+      });
 
-        if (!shouldRetryProvisionResponse(response)) {
-          return response;
-        }
-
-        lastResponse = response;
-      } catch (error) {
-        lastError = error;
+      if (!shouldRetryProvisionResponse(response) || attempt === 1) {
+        return response;
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt === 1) {
+        break;
       }
     }
 
-    if (attempt < 1) {
-      await waitForRetry(250);
-    }
-  }
-
-  if (lastResponse) {
-    return lastResponse;
+    await waitForRetry(250);
   }
 
   throw lastError instanceof Error ? lastError : new Error('Failed to reach backend API');
@@ -141,7 +89,7 @@ async function ensureBusinessProvisionedServerSide(
 ) {
   const authHeader = { Authorization: `Bearer ${accessToken}` };
 
-  const meResponse = await fetchBackendWithFallback('/api/business/me', {
+  const meResponse = await fetchBackendDirect('/api/business/me', {
     headers: authHeader,
   });
 
@@ -159,7 +107,7 @@ async function ensureBusinessProvisionedServerSide(
   const suffix = userId.replaceAll('-', '').slice(0, 6).toLowerCase();
 
   const register = async (slug: string) => {
-    return fetchBackendWithFallback('/api/auth/register', {
+    return fetchBackendDirect('/api/auth/register', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -239,6 +187,7 @@ export async function GET(request: NextRequest) {
       logAuthInfo('auth_callback_provision_check_started', {
         userId: user.id,
         email: maskEmail(user.email ?? null),
+        backendHost: getDirectBackendHost(),
       });
       await ensureBusinessProvisionedServerSide(
         accessToken,
