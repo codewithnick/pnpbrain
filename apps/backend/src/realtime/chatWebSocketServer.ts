@@ -425,7 +425,18 @@ async function processChatRequest(
     });
   } catch (err: unknown) {
     const error = err instanceof Error ? err.message : String(err);
-    console.error('[chat/ws] agent error:', error);
+    console.error('[chat/ws] agent error:', {
+      error,
+      provider: agent.llmProvider,
+      model: agent.llmModel,
+      baseUrl: agent.llmBaseUrl ?? null,
+      hasApiKey: Boolean(agent.llmApiKey),
+      stack: err instanceof Error ? err.stack : undefined,
+      cause:
+        err && typeof err === 'object' && 'cause' in err
+          ? previewValue((err as { cause?: unknown }).cause)
+          : undefined,
+    });
     emit({ type: 'error', error });
   }
 }

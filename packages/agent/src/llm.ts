@@ -77,6 +77,19 @@ function getHostedFallbackProvider(): LlmProvider {
   return DEFAULT_REMOTE_LLM_PROVIDER;
 }
 
+function inferProviderFromApiKeyValue(apiKey?: string): LlmProvider | undefined {
+  const trimmed = apiKey?.trim();
+  if (!trimmed) return undefined;
+
+  if (trimmed.startsWith('hf_')) return 'huggingface';
+  if (trimmed.startsWith('sk-or-v1-')) return 'openrouter';
+  if (trimmed.startsWith('sk-ant-')) return 'anthropic';
+  if (trimmed.startsWith('AIza')) return 'gemini';
+  if (trimmed.startsWith('sk-')) return 'openai';
+
+  return undefined;
+}
+
 function resolveProviderFromApiKey(options: LlmOptions): LlmProvider {
   const inferredProvider = inferProviderFromBaseUrl(options.baseUrl);
   if (inferredProvider && inferredProvider !== 'ollama') {
@@ -86,6 +99,11 @@ function resolveProviderFromApiKey(options: LlmOptions): LlmProvider {
   const apiKey = options.apiKey?.trim();
   if (!apiKey) {
     return getHostedFallbackProvider();
+  }
+
+  const inferredFromKey = inferProviderFromApiKeyValue(apiKey);
+  if (inferredFromKey) {
+    return inferredFromKey;
   }
 
   if (
@@ -103,7 +121,7 @@ function resolveProviderFromApiKey(options: LlmOptions): LlmProvider {
     return 'gemini';
   }
 
-  return 'openai';
+  return getHostedFallbackProvider();
 }
 
 function resolveLlmProvider(options: LlmOptions): LlmProvider {
@@ -114,9 +132,14 @@ function resolveLlmProvider(options: LlmOptions): LlmProvider {
 
   const allowLocalOllama =
     process.env['ALLOW_LOCAL_OLLAMA'] === 'true' || process.env['ALLOW_LOCAL_LLM'] === 'true';
+  const requestedLocalOllama = configuredProvider === 'ollama' || isLocalOllamaBaseUrl(options.baseUrl);
 
-  if ((configuredProvider === 'ollama' || isLocalOllamaBaseUrl(options.baseUrl)) && allowLocalOllama) {
+  if (requestedLocalOllama && allowLocalOllama) {
     return 'ollama';
+  }
+
+  if (requestedLocalOllama && !allowLocalOllama) {
+    console.warn('[AGENT/llm] Ignoring local Ollama configuration and routing to a hosted provider.');
   }
 
   if (options.apiKey) {
