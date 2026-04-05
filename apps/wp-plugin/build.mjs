@@ -23,7 +23,7 @@ import { createReadStream, statSync }  from 'node:fs';
 import { fileURLToPath }              from 'node:url';
 
 const __dirname   = dirname( fileURLToPath( import.meta.url ) );
-const REPO_ROOT   = resolve( __dirname, '..', '..', '..', '..' );
+const REPO_ROOT   = resolve( __dirname, '..', '..' );
 const WIDGET_DIR  = join( REPO_ROOT, 'apps', 'widget' );
 const PLUGIN_DIR  = __dirname;
 const ASSETS_DIR  = join( PLUGIN_DIR, 'assets' );
