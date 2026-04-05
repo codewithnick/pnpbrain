@@ -2,7 +2,12 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@pnpbrain/db/client';
 import { firecrawlJobs, knowledgeChunks, knowledgeDocuments } from '@pnpbrain/db/schema';
 import { MemoryService } from '@pnpbrain/agent/memory';
-import { chunkText, getEmbeddingModel, normalizeEmbeddingVector } from '@pnpbrain/agent/rag';
+import {
+  chunkText,
+  getEmbeddingModel,
+  normalizeEmbeddingVector,
+  type EmbeddingModelOptions,
+} from '@pnpbrain/agent/rag';
 
 type CrawledPage = {
   url: string;
@@ -20,6 +25,72 @@ type RobotsRules = {
 };
 
 const robotsCache = new Map<string, RobotsRules>();
+
+function describeEmbeddingOptions(options: EmbeddingModelOptions): string {
+  const parts = [
+    `provider=${options.provider ?? 'huggingface'}`,
+    `model=${options.model ?? 'BAAI/bge-small-en-v1.5'}`,
+  ];
+
+  if (options.baseUrl) {
+    parts.push(`baseUrl=${options.baseUrl}`);
+  }
+
+  return parts.join(' ');
+}
+
+function getCrawlerEmbeddingOptions(): EmbeddingModelOptions {
+  const provider = (process.env['CRAWL_EMBEDDING_PROVIDER'] ?? 'huggingface').toLowerCase();
+
+  if (provider === 'openai') {
+    const apiKey = process.env['CRAWL_OPENAI_API_KEY'] ?? process.env['OPENAI_API_KEY'];
+    return {
+      provider: 'openai',
+      model:
+        process.env['CRAWL_EMBEDDING_MODEL'] ??
+        process.env['OPENAI_EMBEDDING_MODEL'] ??
+        'text-embedding-3-small',
+      ...(apiKey ? { apiKey } : {}),
+    };
+  }
+
+  if (provider === 'ollama') {
+    const baseUrl = process.env['CRAWL_OLLAMA_BASE_URL'] ?? process.env['OLLAMA_BASE_URL'];
+    return {
+      provider: 'ollama',
+      model:
+        process.env['CRAWL_EMBEDDING_MODEL'] ??
+        process.env['OLLAMA_EMBEDDING_MODEL'] ??
+        'nomic-embed-text',
+      ...(baseUrl ? { baseUrl } : {}),
+    };
+  }
+
+  const apiKey =
+    process.env['CRAWL_HUGGINGFACE_API_KEY'] ??
+    process.env['HUGGINGFACE_API_KEY'] ??
+    process.env['HF_TOKEN'] ??
+    process.env['HUGGINGFACEHUB_API_TOKEN'];
+
+  return {
+    provider: 'huggingface',
+    model:
+      process.env['CRAWL_EMBEDDING_MODEL'] ??
+      process.env['CRAWL_HUGGINGFACE_EMBEDDING_MODEL'] ??
+      process.env['HUGGINGFACE_EMBEDDING_MODEL'] ??
+      process.env['HF_EMBEDDING_MODEL'] ??
+      'BAAI/bge-small-en-v1.5',
+    baseUrl:
+      process.env['CRAWL_HUGGINGFACE_EMBEDDING_BASE_URL'] ??
+      process.env['HUGGINGFACE_EMBEDDING_BASE_URL'] ??
+      process.env['CRAWL_HUGGINGFACE_BASE_URL'] ??
+      process.env['HUGGINGFACE_BASE_URL'] ??
+      process.env['HF_EMBEDDING_BASE_URL'] ??
+      process.env['HF_BASE_URL'] ??
+      'https://router.huggingface.co/hf-inference/models',
+    ...(apiKey ? { apiKey } : {}),
+  };
+}
 
 function parseCsvList(value?: string): string[] {
   if (!value) {
@@ -445,7 +516,9 @@ export async function processCrawlJob(
     .where(eq(firecrawlJobs.id, jobId));
 
   try {
-    const embeddings = getEmbeddingModel();
+    const embeddingOptions = getCrawlerEmbeddingOptions();
+    console.log(`[crawl-worker] job ${jobId} embeddings ${describeEmbeddingOptions(embeddingOptions)}`);
+    const embeddings = getEmbeddingModel(embeddingOptions);
     const maxPagesPerSeed = Math.max(
       1,
       Number.parseInt(process.env['CRAWL_MAX_PAGES_PER_SEED'] ?? '10', 10) || 10

@@ -23,6 +23,199 @@ const embeddingCache = new Map<string, EmbeddingCacheEntry>();
 
 const DEFAULT_KNOWLEDGE_EMBEDDING_DIMENSIONS = 1536;
 
+export type EmbeddingProvider = 'ollama' | 'openai' | 'huggingface' | 'hf';
+
+type ResolvedEmbeddingProvider = 'ollama' | 'openai' | 'huggingface';
+
+export interface EmbeddingModelOptions {
+  provider?: EmbeddingProvider;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+export interface EmbeddingConfiguration {
+  provider: ResolvedEmbeddingProvider;
+  model: string;
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+const DEFAULT_HUGGINGFACE_EMBEDDING_BASE_URL = 'https://router.huggingface.co/hf-inference/models';
+
+function normalizeHuggingFaceEmbeddingBaseUrl(baseUrl?: string): string {
+  const trimmed = baseUrl?.trim();
+
+  if (!trimmed) {
+    return DEFAULT_HUGGINGFACE_EMBEDDING_BASE_URL;
+  }
+
+  if (trimmed === 'https://huggingface.co/v1' || trimmed === 'https://router.huggingface.co/v1') {
+    return DEFAULT_HUGGINGFACE_EMBEDDING_BASE_URL;
+  }
+
+  return trimmed.replace(/\/+$/, '');
+}
+
+function buildHuggingFaceEmbeddingUrl(baseUrl: string, model: string): string {
+  const normalizedBaseUrl = normalizeHuggingFaceEmbeddingBaseUrl(baseUrl);
+  return `${normalizedBaseUrl}/${model}`;
+}
+
+function isNumericArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'number');
+}
+
+function extractEmbeddingVector(payload: unknown): number[] {
+  if (isNumericArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload) && payload.length > 0 && isNumericArray(payload[0])) {
+    return payload[0];
+  }
+
+  if (typeof payload === 'object' && payload !== null) {
+    const record = payload as Record<string, unknown>;
+    const embeddings = record['embeddings'];
+    if (isNumericArray(embeddings)) {
+      return embeddings;
+    }
+    if (Array.isArray(embeddings) && embeddings.length > 0 && isNumericArray(embeddings[0])) {
+      return embeddings[0];
+    }
+  }
+
+  throw new Error('Unexpected Hugging Face embedding response shape');
+}
+
+class HuggingFaceHostedEmbeddings extends Embeddings {
+  constructor(
+    private readonly config: { model: string; apiKey: string; baseUrl: string }
+  ) {
+    super({});
+  }
+
+  private async requestEmbedding(input: string): Promise<number[]> {
+    const response = await fetch(buildHuggingFaceEmbeddingUrl(this.config.baseUrl, this.config.model), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        inputs: input,
+        options: { wait_for_model: true },
+      }),
+    });
+
+    if (!response.ok) {
+      const details = await response.text();
+      throw new Error(
+        `Hugging Face embedding request failed (${response.status}) for model ${this.config.model}: ${details.slice(0, 300)}`
+      );
+    }
+
+    const payload = (await response.json()) as unknown;
+    return extractEmbeddingVector(payload);
+  }
+
+  public async embedDocuments(documents: string[]): Promise<number[][]> {
+    return Promise.all(documents.map((document) => this.requestEmbedding(document)));
+  }
+
+  public async embedQuery(document: string): Promise<number[]> {
+    return this.requestEmbedding(document);
+  }
+}
+
+function getConfiguredEmbeddingProvider(providerOverride?: EmbeddingProvider): ResolvedEmbeddingProvider {
+  const provider = (providerOverride ?? process.env['EMBEDDING_PROVIDER'] ?? 'ollama').toLowerCase();
+
+  if (provider === 'openai') {
+    return 'openai';
+  }
+
+  if (provider === 'huggingface' || provider === 'hf') {
+    return 'huggingface';
+  }
+
+  return 'ollama';
+}
+
+function getConfiguredEmbeddingModel(
+  provider: ResolvedEmbeddingProvider,
+  modelOverride?: string
+): string {
+  if (modelOverride) {
+    return modelOverride;
+  }
+
+  if (provider === 'openai') {
+    return process.env['OPENAI_EMBEDDING_MODEL'] ?? 'text-embedding-3-small';
+  }
+
+  if (provider === 'huggingface') {
+    return (
+      process.env['HUGGINGFACE_EMBEDDING_MODEL'] ??
+      process.env['HF_EMBEDDING_MODEL'] ??
+      'BAAI/bge-small-en-v1.5'
+    );
+  }
+
+  return process.env['OLLAMA_EMBEDDING_MODEL'] ?? 'nomic-embed-text';
+}
+
+export function getEmbeddingConfiguration(
+  options: EmbeddingModelOptions = {}
+): EmbeddingConfiguration {
+  const provider = getConfiguredEmbeddingProvider(options.provider);
+  const model = getConfiguredEmbeddingModel(provider, options.model);
+
+  if (provider === 'openai') {
+    const apiKey = options.apiKey ?? process.env['OPENAI_API_KEY'];
+    return {
+      provider,
+      model,
+      ...(apiKey ? { apiKey } : {}),
+    };
+  }
+
+  if (provider === 'huggingface') {
+    const apiKey =
+      options.apiKey ??
+      process.env['HUGGINGFACE_API_KEY'] ??
+      process.env['HF_TOKEN'] ??
+      process.env['HUGGINGFACEHUB_API_TOKEN'];
+    const baseUrl = normalizeHuggingFaceEmbeddingBaseUrl(
+      options.baseUrl ??
+        process.env['HUGGINGFACE_EMBEDDING_BASE_URL'] ??
+        process.env['HF_EMBEDDING_BASE_URL'] ??
+        process.env['HUGGINGFACE_BASE_URL'] ??
+        process.env['HF_BASE_URL']
+    );
+
+    return {
+      provider,
+      model,
+      baseUrl,
+      ...(apiKey ? { apiKey } : {}),
+    };
+  }
+
+  return {
+    provider,
+    model,
+    baseUrl: options.baseUrl ?? process.env['OLLAMA_BASE_URL'] ?? 'http://localhost:11434',
+  };
+}
+
+export function formatEmbeddingConfiguration(options: EmbeddingModelOptions = {}): string {
+  const config = getEmbeddingConfiguration(options);
+  const baseUrlSuffix = config.baseUrl ? ` baseUrl=${config.baseUrl}` : '';
+  return `provider=${config.provider} model=${config.model}${baseUrlSuffix}`;
+}
+
 function getConfiguredEmbeddingDimensions(): number {
   const configured = Number.parseInt(
     process.env['KNOWLEDGE_EMBEDDING_DIMENSIONS'] ?? `${DEFAULT_KNOWLEDGE_EMBEDDING_DIMENSIONS}`,
@@ -37,8 +230,8 @@ function getConfiguredEmbeddingDimensions(): number {
 }
 
 function buildEmbeddingCacheKey(query: string): string {
-  const provider = process.env['EMBEDDING_PROVIDER'] ?? 'ollama';
-  return `${provider}:${query.trim().toLowerCase()}`;
+  const config = getEmbeddingConfiguration();
+  return `${config.provider}:${config.model}:${query.trim().toLowerCase()}`;
 }
 
 function getCachedEmbedding(cacheKey: string): number[] | null {
@@ -72,24 +265,40 @@ function setCachedEmbedding(cacheKey: string, vector: number[]): void {
 
 /**
  * Returns an embedding model.
- * Defaults to Ollama nomic-embed-text for local dev.
- * Set EMBEDDING_PROVIDER=openai to use OpenAI text-embedding-3-small.
+ * Defaults to Ollama for local dev.
+ * Set EMBEDDING_PROVIDER=openai or EMBEDDING_PROVIDER=huggingface to use a hosted API.
  */
-export function getEmbeddingModel(): Embeddings {
-  const provider = process.env['EMBEDDING_PROVIDER'] ?? 'ollama';
+export function getEmbeddingModel(options: EmbeddingModelOptions = {}): Embeddings {
+  const config = getEmbeddingConfiguration(options);
 
-  if (provider === 'openai') {
+  if (config.provider === 'openai') {
     // Dynamic import so Ollama users don't need the OpenAI package
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { OpenAIEmbeddings } = require('@langchain/openai');
-    const apiKey = process.env['OPENAI_API_KEY'];
-    if (!apiKey) throw new Error('OPENAI_API_KEY is not set for embeddings');
-    return new OpenAIEmbeddings({ apiKey, model: 'text-embedding-3-small' });
+    if (!config.apiKey) throw new Error('OPENAI_API_KEY is not set for embeddings');
+    return new OpenAIEmbeddings({
+      apiKey: config.apiKey,
+      model: config.model,
+    });
   }
 
-  // Default: Ollama nomic-embed-text (1536 dims — same shape as OpenAI small)
-  const baseUrl = process.env['OLLAMA_BASE_URL'] ?? 'http://localhost:11434';
-  return new OllamaEmbeddings({ baseUrl, model: 'nomic-embed-text' });
+  if (config.provider === 'huggingface') {
+    if (!config.apiKey) {
+      throw new Error('HUGGINGFACE_API_KEY (or HF_TOKEN / HUGGINGFACEHUB_API_TOKEN) is not set');
+    }
+
+    return new HuggingFaceHostedEmbeddings({
+      apiKey: config.apiKey,
+      model: config.model,
+      baseUrl: config.baseUrl ?? DEFAULT_HUGGINGFACE_EMBEDDING_BASE_URL,
+    });
+  }
+
+  // Default: local Ollama embeddings for offline development.
+  return new OllamaEmbeddings({
+    baseUrl: config.baseUrl ?? 'http://localhost:11434',
+    model: config.model,
+  });
 }
 
 export function normalizeEmbeddingVector(vector: number[]): number[] {
