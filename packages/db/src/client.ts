@@ -15,6 +15,59 @@ import * as schema from './schema/index.js';
 
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
+function encodeCredential(value: string) {
+  try {
+    return encodeURIComponent(decodeURIComponent(value));
+  } catch {
+    return encodeURIComponent(value);
+  }
+}
+
+function normalizeDatabaseUrl(rawUrl: string) {
+  const schemeIndex = rawUrl.indexOf('://');
+  if (schemeIndex === -1) return rawUrl;
+
+  const protocol = rawUrl.slice(0, schemeIndex + 3);
+  const remainder = rawUrl.slice(schemeIndex + 3);
+  const atIndex = remainder.lastIndexOf('@');
+  if (atIndex === -1) return rawUrl;
+
+  const credentials = remainder.slice(0, atIndex);
+  const hostAndPath = remainder.slice(atIndex + 1);
+  const separatorIndex = credentials.indexOf(':');
+  if (separatorIndex === -1) return rawUrl;
+
+  const username = credentials.slice(0, separatorIndex);
+  const password = credentials.slice(separatorIndex + 1);
+
+  return `${protocol}${encodeCredential(username)}:${encodeCredential(password)}@${hostAndPath}`;
+}
+
+function stripWrappingQuotes(value: string) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
+}
+
+function getDatabaseUrl() {
+  const rawUrl = stripWrappingQuotes(process.env['DATABASE_URL']?.trim() ?? '');
+  if (!rawUrl) {
+    throw new Error('DATABASE_URL is not set');
+  }
+
+  const normalizedUrl = URL.canParse(rawUrl) ? rawUrl : normalizeDatabaseUrl(rawUrl);
+  if (!URL.canParse(normalizedUrl)) {
+    throw new TypeError('DATABASE_URL is not a valid PostgreSQL connection string');
+  }
+
+  return normalizedUrl;
+}
+
 /**
  * Returns a singleton Drizzle DB instance.
  * Call only from server-side code (backend, packages/agent, packages/tools).
@@ -22,10 +75,7 @@ let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 export function getDb() {
   if (_db) return _db;
 
-  const url = process.env['DATABASE_URL'];
-  if (!url) throw new Error('DATABASE_URL is not set');
-
-  const queryClient = postgres(url, {
+  const queryClient = postgres(getDatabaseUrl(), {
     // pgvector requires this to be disabled
     prepare: false,
   });
