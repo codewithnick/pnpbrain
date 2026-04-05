@@ -22,12 +22,12 @@ RUN pnpm install --frozen-lockfile
 COPY apps/backend apps/backend
 COPY packages packages
 
-# Verify the backend still compiles during the image build
-RUN pnpm --filter backend build
+# Build the backend and its workspace dependencies so runtime `dist/*` exports exist
+RUN pnpm --filter backend... build
 
 ENV NODE_ENV=production
 ENV PORT=8080
 
 EXPOSE 8080
 
-CMD ["pnpm", "--dir", "apps/backend", "exec", "tsx", "src/server.ts"]
+CMD ["pnpm", "--dir", "apps/backend", "start"]
