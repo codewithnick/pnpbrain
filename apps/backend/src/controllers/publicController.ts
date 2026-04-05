@@ -10,6 +10,7 @@ import {
   parseAllowedDomains,
 } from '../lib/business';
 import { resolveAgentForBusiness } from '../lib/agents';
+import { shouldEnforcePublicDomainRestrictions } from '../middleware/cors';
 
 const widgetSessionSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]+$/),
@@ -161,7 +162,11 @@ export class PublicController {
 
     const allowedDomains = parseAllowedDomains(agent.allowedDomains);
     const originHostname = extractOriginHostname(req.header('origin'));
-    if (allowedDomains.length > 0 && (!originHostname || !isAllowedHostname(originHostname, allowedDomains))) {
+    if (
+      shouldEnforcePublicDomainRestrictions()
+      && allowedDomains.length > 0
+      && (!originHostname || !isAllowedHostname(originHostname, allowedDomains))
+    ) {
       return res.status(401).json({ ok: false, error: 'Origin is not allowed for this business' });
     }
 

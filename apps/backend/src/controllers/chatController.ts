@@ -34,7 +34,7 @@ import { isBusinessActive, recordMessageUsage, refreshBusinessUsageCycleIfNeeded
 import { shouldEscalateResponse } from '../lib/escalation';
 import { createSupportTicket } from '../lib/supportTickets';
 import { createLeadHandoff } from '../lib/leadHandoffs';
-import { resolveAllowedCorsOrigin } from '../middleware/cors';
+import { resolveAllowedCorsOrigin, shouldEnforcePublicDomainRestrictions } from '../middleware/cors';
 
 const ChatRequestSchema = z.object({
   message: z.string().min(1).max(4000),
@@ -212,8 +212,9 @@ export class ChatController {
     const allowedDomains = parseAllowedDomains(agent.allowedDomains);
     const hasMatchingApiKey = apiKeyMatched;
     const originAllowed = isAllowedOrigin(req.header('origin'), allowedDomains);
+    const shouldEnforceAllowedDomains = shouldEnforcePublicDomainRestrictions() || !publicToken;
 
-    if (allowedDomains.length > 0 && !originAllowed && !hasMatchingApiKey) {
+    if (shouldEnforceAllowedDomains && allowedDomains.length > 0 && !originAllowed && !hasMatchingApiKey) {
       return res.status(401).json({
         ok: false,
         error: 'Unauthorized. Use a configured hosted domain or provide a valid business API key.',
@@ -254,7 +255,10 @@ export class ChatController {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const allowedOrigin = resolveAllowedCorsOrigin(typeof req.headers.origin === 'string' ? req.headers.origin : undefined);
+    const allowedOrigin = resolveAllowedCorsOrigin(
+      typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
+      req.path,
+    );
     if (allowedOrigin) {
       res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
     }

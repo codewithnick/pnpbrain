@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import Navbar from '@/components/Navbar';
 import Hero from '@/components/Hero';
+import LiveDemo from '@/components/LiveDemo';
 import Features from '@/components/Features';
 import Integrations from '@/components/Integrations';
 import HowItWorks from '@/components/HowItWorks';
@@ -14,6 +15,7 @@ export default function HomePage() {
       <Navbar />
       <main>
         <Hero />
+        <LiveDemo />
         <Features />
         <Integrations />
         <HowItWorks />

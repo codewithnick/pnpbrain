@@ -206,6 +206,7 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
     showUserAvatar = false,
     userAvatarText = 'You',
     position = 'bottom-right',
+    defaultOpen = false,
     headerSubtitle = 'Online',
     chatBackgroundColor = '#f9fafb',
     userMessageColor,
@@ -243,7 +244,7 @@ export default function ChatWidget({ config }: Readonly<ChatWidgetProps>) {
     );
   };
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [messages, setMessages] = useState<Message[]>([
     { id: 'welcome', role: 'assistant', content: welcomeMessage },
   ]);

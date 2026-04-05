@@ -106,6 +106,7 @@ function buildConfigFromDataset(
     showUserAvatar: parseBoolean(dataset['showUserAvatar'], fallback.showUserAvatar ?? false),
     userAvatarText: dataset['userAvatarText'] ?? fallback.userAvatarText ?? 'You',
     position: parsePosition(dataset['position'], fallback.position ?? 'bottom-right'),
+    defaultOpen: parseBoolean(dataset['defaultOpen'], fallback.defaultOpen ?? false),
     headerSubtitle: dataset['headerSubtitle'] ?? fallback.headerSubtitle ?? 'Online',
     chatBackgroundColor: dataset['chatBackgroundColor'] ?? fallback.chatBackgroundColor ?? '#f9fafb',
     userMessageColor: dataset['userMessageColor'] ?? fallback.userMessageColor ?? '#6366f1',

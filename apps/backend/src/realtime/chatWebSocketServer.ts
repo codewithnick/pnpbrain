@@ -25,6 +25,7 @@ import { isBusinessActive, recordMessageUsage, refreshBusinessUsageCycleIfNeeded
 import { shouldEscalateResponse } from '../lib/escalation';
 import { createSupportTicket } from '../lib/supportTickets';
 import { createLeadHandoff } from '../lib/leadHandoffs';
+import { shouldEnforcePublicDomainRestrictions } from '../middleware/cors';
 
 const ChatSocketRequestSchema = z.object({
   type: z.literal('chat'),
@@ -182,7 +183,9 @@ async function processChatRequest(
   }
 
   const allowedDomains = parseAllowedDomains(agent.allowedDomains);
-  if (allowedDomains.length > 0 && !isAllowedOrigin(origin, allowedDomains) && !apiKeyMatched) {
+  const shouldEnforceAllowedDomains = shouldEnforcePublicDomainRestrictions() || !parsed.publicToken;
+
+  if (shouldEnforceAllowedDomains && allowedDomains.length > 0 && !isAllowedOrigin(origin, allowedDomains) && !apiKeyMatched) {
     emit({
       type: 'error',
       error: 'Unauthorized. Use a configured hosted domain or provide a valid business API key.',

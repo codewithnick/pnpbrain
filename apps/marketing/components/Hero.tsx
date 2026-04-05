@@ -39,15 +39,24 @@ export default function Hero() {
       />
 
       <Container maxWidth="md" sx={{ position: 'relative', textAlign: 'center' }}>
-        <Chip
-          icon={<BoltRoundedIcon fontSize="small" />}
-          label="Powered by local Ollama and LangGraph.js"
-          sx={{
-            bgcolor: 'background.paper',
-            border: '1px solid rgba(14, 165, 233, 0.24)',
-            mb: 3,
-          }}
-        />
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} justifyContent="center" sx={{ mb: 3 }}>
+          <Chip
+            icon={<BoltRoundedIcon fontSize="small" />}
+            label="Powered by local Ollama and LangGraph.js"
+            sx={{
+              bgcolor: 'background.paper',
+              border: '1px solid rgba(14, 165, 233, 0.24)',
+            }}
+          />
+          <Chip
+            label="Live widget active in the bottom-right corner"
+            sx={{
+              bgcolor: 'rgba(15, 118, 110, 0.08)',
+              border: '1px solid rgba(15, 118, 110, 0.18)',
+              color: '#0f766e',
+            }}
+          />
+        </Stack>
 
         <Typography
           variant="h1"
@@ -88,8 +97,8 @@ export default function Hero() {
           >
             Start for free
           </Button>
-          <Button href="#how-it-works" size="large" variant="outlined" sx={{ px: 3, py: 1.2, borderRadius: 2.5 }}>
-            See how it works
+          <Button href="#integrations" size="large" variant="outlined" sx={{ px: 3, py: 1.2, borderRadius: 2.5 }}>
+            View embed options
           </Button>
         </Stack>
       </Container>

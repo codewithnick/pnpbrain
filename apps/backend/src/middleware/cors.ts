@@ -1,5 +1,25 @@
 import { Request, Response, NextFunction } from 'express';
 
+function parseBooleanFlag(rawValue: string | undefined, fallbackValue: boolean): boolean {
+  if (!rawValue) return fallbackValue;
+
+  const normalized = rawValue.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+
+  return fallbackValue;
+}
+
+function isPublicBrowserRoute(requestPath: string | undefined): boolean {
+  if (!requestPath) return false;
+
+  return requestPath === '/api/agent/chat' || requestPath.startsWith('/api/public/');
+}
+
+export function shouldEnforcePublicDomainRestrictions(): boolean {
+  return parseBooleanFlag(process.env['ENFORCE_PUBLIC_DOMAIN_RESTRICTIONS'], false);
+}
+
 function isLocalDevOrigin(origin: string): boolean {
   try {
     const url = new URL(origin);
@@ -46,16 +66,17 @@ export function getAllowedCorsOrigins(): string[] {
   return combinedOrigins;
 }
 
-export function resolveAllowedCorsOrigin(origin: string | undefined): string | null {
+export function resolveAllowedCorsOrigin(origin: string | undefined, requestPath?: string): string | null {
   if (!origin) {
     return getAllowedCorsOrigins().includes('*') ? '*' : null;
   }
 
   const normalizedOrigin = normalizeOrigin(origin);
+  const allowAnyPublicOrigin = !shouldEnforcePublicDomainRestrictions() && isPublicBrowserRoute(requestPath);
   const allowedOrigins = getAllowedCorsOrigins();
   const allowLocalDev = process.env['NODE_ENV'] !== 'production' && isLocalDevOrigin(normalizedOrigin);
 
-  if (allowLocalDev || allowedOrigins.includes('*') || allowedOrigins.includes(normalizedOrigin)) {
+  if (allowAnyPublicOrigin || allowLocalDev || allowedOrigins.includes('*') || allowedOrigins.includes(normalizedOrigin)) {
     return normalizedOrigin;
   }
 
@@ -68,7 +89,7 @@ export function resolveAllowedCorsOrigin(origin: string | undefined): string | n
  */
 export function corsMwfn(req: Request, res: Response, next: NextFunction) {
   const originHeader = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
-  const allowedOrigin = resolveAllowedCorsOrigin(originHeader);
+  const allowedOrigin = resolveAllowedCorsOrigin(originHeader, req.path);
 
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);

@@ -31,6 +31,8 @@ export interface WidgetConfig {
   userAvatarText?: string;
   /** Chat launcher and panel position */
   position?: 'bottom-right' | 'bottom-left';
+  /** Whether the widget starts expanded on first render */
+  defaultOpen?: boolean;
   /** Header subtitle shown under bot name */
   headerSubtitle?: string;
   /** Panel background colour */
