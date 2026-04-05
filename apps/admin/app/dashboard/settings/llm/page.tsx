@@ -11,13 +11,13 @@ import { fetchBackend } from '@/lib/supabase';
 import { fetchAgents, resolveActiveAgent } from '@/lib/agents';
 
 const PROVIDERS = [
-  { value: 'ollama',     label: 'Ollama', description: 'Self-hosted — runs on your own machine or server. Free.' },
+  { value: 'huggingface', label: 'Hugging Face', description: 'Hosted router API — default recommended option for chat and RAG.' },
+  { value: 'openrouter', label: 'OpenRouter', description: 'Hosted router API — unified access to models across providers.' },
   { value: 'openai',     label: 'OpenAI', description: 'Hosted API — GPT-4o, GPT-4o mini, etc.' },
   { value: 'anthropic',  label: 'Anthropic', description: 'Hosted API — Claude 3.5 Haiku / Sonnet.' },
   { value: 'gemini',     label: 'Google Gemini', description: 'Hosted API — Gemini 1.5 / 2.0 model family.' },
   { value: 'deepseek',   label: 'DeepSeek', description: 'Hosted API — DeepSeek Chat and Reasoner models.' },
-  { value: 'huggingface', label: 'Hugging Face', description: 'Hosted router API — open models from multiple providers.' },
-  { value: 'openrouter', label: 'OpenRouter', description: 'Hosted router API — unified access to models across providers.' },
+  { value: 'ollama',     label: 'Ollama', description: 'Local legacy option — only use when you explicitly want self-hosted chat.' },
 ];
 
 const DEFAULT_MODELS: Record<string, string> = {
@@ -42,8 +42,8 @@ export default function LlmSettingsPage() {
   const [error, setError]         = useState('');
   const [hasKey, setHasKey]       = useState(false);
 
-  const [provider, setProvider]   = useState('ollama');
-  const [model, setModel]         = useState('llama3.1:8b');
+  const [provider, setProvider]   = useState('huggingface');
+  const [model, setModel]         = useState('meta-llama/Llama-3.1-8B-Instruct');
   const [apiKey, setApiKey]       = useState('');
   const [baseUrl, setBaseUrl]     = useState('');
 

@@ -354,6 +354,13 @@ export class AgentGraphService {
     if (llmApiKey) llmOptions.apiKey = llmApiKey;
     if (llmBaseUrl) llmOptions.baseUrl = llmBaseUrl;
 
+    console.log('[AGENT/graph] LLM request config:', {
+      provider: llmOptions.provider ?? 'default-hosted',
+      model: llmOptions.model ?? 'provider-default',
+      baseUrl: llmOptions.baseUrl ?? null,
+      apiKeySource: llmOptions.apiKey ? 'agent' : 'env',
+    });
+
     const llm = this.llmService.getModel(llmOptions);
     const llmWithTools =
       typeof llm.bindTools === 'function' ? llm.bindTools(allTools) : llm;

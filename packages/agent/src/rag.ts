@@ -130,7 +130,7 @@ class HuggingFaceHostedEmbeddings extends Embeddings {
 }
 
 function getConfiguredEmbeddingProvider(providerOverride?: EmbeddingProvider): ResolvedEmbeddingProvider {
-  const provider = (providerOverride ?? process.env['EMBEDDING_PROVIDER'] ?? 'ollama').toLowerCase();
+  const provider = (providerOverride ?? process.env['EMBEDDING_PROVIDER'] ?? 'huggingface').toLowerCase();
 
   if (provider === 'openai') {
     return 'openai';
@@ -140,7 +140,11 @@ function getConfiguredEmbeddingProvider(providerOverride?: EmbeddingProvider): R
     return 'huggingface';
   }
 
-  return 'ollama';
+  const allowLocalEmbeddings =
+    process.env['ALLOW_LOCAL_OLLAMA_EMBEDDINGS'] === 'true' ||
+    process.env['ALLOW_LOCAL_OLLAMA'] === 'true';
+
+  return allowLocalEmbeddings ? 'ollama' : 'huggingface';
 }
 
 function getConfiguredEmbeddingModel(
@@ -265,8 +269,8 @@ function setCachedEmbedding(cacheKey: string, vector: number[]): void {
 
 /**
  * Returns an embedding model.
- * Defaults to Ollama for local dev.
- * Set EMBEDDING_PROVIDER=openai or EMBEDDING_PROVIDER=huggingface to use a hosted API.
+ * Defaults to Hugging Face hosted embeddings.
+ * Local Ollama embeddings are only used with explicit opt-in.
  */
 export function getEmbeddingModel(options: EmbeddingModelOptions = {}): Embeddings {
   const config = getEmbeddingConfiguration(options);

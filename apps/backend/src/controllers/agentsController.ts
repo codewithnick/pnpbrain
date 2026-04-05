@@ -150,6 +150,8 @@ export class AgentsController {
         name: parsed.data.name,
         slug: parsed.data.slug,
         description: parsed.data.description ?? '',
+        llmProvider: 'huggingface',
+        llmModel: 'meta-llama/Llama-3.1-8B-Instruct',
         agentApiKey: generateAgentApiKey(),
       })
       .returning();
